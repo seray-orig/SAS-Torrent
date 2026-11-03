@@ -83,9 +83,8 @@ public sealed class PeerDiscovery
         {
             try
             {
-                var peers = await new DhtClient(_torrent.InfoHash, _peerId, _port).FindPeersAsync(ct);
-                System.Console.WriteLine($"[Discovery] DHT: {peers.Count} пиров");
-                await EmitAsync(peers);
+                await foreach (var peer in new DhtClient(_torrent.InfoHash).FindPeersAsync(ct))
+                    await EmitAsync(new[] { peer });
             }
             catch (OperationCanceledException) { }
             catch (Exception ex)

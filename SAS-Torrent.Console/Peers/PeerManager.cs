@@ -1,3 +1,4 @@
+using SAS_Torrent.Console.Peers.Transport;
 using SAS_Torrent.Console.Tracker;
 
 namespace SAS_Torrent.Console.Peers;
@@ -5,6 +6,12 @@ namespace SAS_Torrent.Console.Peers;
 public sealed class PeerManager
 {
     private const int DefaultMaxParallelConnects = 64;
+
+    private static readonly IReadOnlyList<IPeerTransport> Transports = new IPeerTransport[]
+    {
+        new TcpPeerTransport(),
+        new UtpPeerTransport()
+    };
 
     private readonly byte[] _infoHash;
     private readonly string _ourPeerId;
@@ -62,7 +69,7 @@ public sealed class PeerManager
 
     public async Task<bool> ConnectToPeerAsync(PeerInfo peer, CancellationToken ct)
     {
-        var conn = new PeerConnection(peer.Ip, peer.Port, _infoHash, _ourPeerId) { PieceCount = _pieceCount };
+        var conn = new PeerConnection(peer.Ip, peer.Port, _infoHash, _ourPeerId, Transports) { PieceCount = _pieceCount };
         conn.OnDisconnected += RemoveConnection;
 
         if (!await conn.ConnectAndHandshakeAsync(ct))

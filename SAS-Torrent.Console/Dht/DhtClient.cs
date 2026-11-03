@@ -1,5 +1,8 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
+using System.Numerics;
+using System.Runtime.CompilerServices;
 using System.Text;
 using SAS_Torrent.Console.Bencode;
 using SAS_Torrent.Console.Tracker;
@@ -8,88 +11,327 @@ namespace SAS_Torrent.Console.Dht;
 
 public sealed class DhtClient
 {
-    private readonly byte[] _infoHash;
-    private readonly string _ourPeerId;
-    private readonly int _port;
-    private static readonly IPEndPoint[] Bootstrap = new[]
+    private const int Alpha = 3;
+    private const int MaxQueries = 200;
+    private const int MaxKnownNodes = 600;
+    private const int BootstrapPort = 6881;
+
+    private static readonly TimeSpan QueryTimeout = TimeSpan.FromSeconds(3);
+    private static readonly TimeSpan LookupTimeout = TimeSpan.FromSeconds(25);
+
+    private static readonly string[] BootstrapHosts =
     {
-        new IPEndPoint(IPAddress.Parse("67.215.246.10"), 6881),
-        new IPEndPoint(IPAddress.Parse("82.221.103.244"), 6881),
-        new IPEndPoint(IPAddress.Parse("23.21.224.150"), 6881),
+        "dht.transmissionbt.com",
+        "router.bittorrent.com",
+        "router.utorrent.com",
+        "dht.aelitis.com",
+        "dht.libtorrent.org"
     };
 
-    public DhtClient(byte[] infoHash, string ourPeerId, int port)
+    private readonly byte[] _infoHash;
+    private readonly byte[] _nodeId;
+    private readonly ConcurrentDictionary<int, TaskCompletionSource<BencodeDictionary?>> _transactions = new();
+    private int _nextTransaction;
+
+    public DhtClient(byte[] infoHash)
     {
         _infoHash = infoHash;
-        _ourPeerId = ourPeerId;
-        _port = port;
+        _nodeId = RandomId();
     }
 
-    public async Task<List<PeerInfo>> FindPeersAsync(CancellationToken ct)
+    public async IAsyncEnumerable<PeerInfo> FindPeersAsync([EnumeratorCancellation] CancellationToken ct)
     {
-        var peers = new List<PeerInfo>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var known = new Dictionary<string, DhtNode>(StringComparer.Ordinal);
+        var nodeLock = new object();
+
+        using var lookupCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        lookupCts.CancelAfter(LookupTimeout);
+
+        using var udp = new UdpClient(new IPEndPoint(IPAddress.Any, 0));
+        var receiveTask = ReceiveLoopAsync(udp, lookupCts.Token);
+
+        var queries = 0;
         try
         {
-            using var udp = new UdpClient(0);
-            var tid = Random.Shared.Next(10000);
-            var req = BuildGetPeers(tid);
-            foreach (var b in Bootstrap)
+            var bootstrapEndpoints = await ResolveBootstrapAsync(lookupCts.Token);
+            lock (nodeLock)
             {
-                try { await udp.SendAsync(req, req.Length, b); } catch { }
+                foreach (var endpoint in bootstrapEndpoints)
+                    known[endpoint.ToString()] = new DhtNode(endpoint) { IsBootstrap = true };
             }
-            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            cts.CancelAfter(TimeSpan.FromSeconds(10));
-            for (int i = 0; i < 20; i++)
+
+            while (!lookupCts.IsCancellationRequested && queries < MaxQueries)
             {
-                try
+                List<DhtNode> batch;
+                lock (nodeLock)
                 {
-                    var res = await udp.ReceiveAsync(cts.Token);
-                    var dict = BencodeParser.Parse(res.Buffer) as BencodeDictionary;
-                    if (dict == null) continue;
-                    if (dict.Entries.TryGetValue("r", out var r) && r is BencodeDictionary rd)
+                    batch = known.Values
+                        .Where(node => !node.Queried && (node.Id != null || node.IsBootstrap))
+                        .OrderBy(node => node.DistanceTo(_infoHash))
+                        .Take(Alpha)
+                        .ToList();
+
+                    foreach (var node in batch)
+                        node.Queried = true;
+                }
+
+                if (batch.Count == 0) break;
+                queries += batch.Count;
+
+                var responses = await Task.WhenAll(batch.Select(node => QueryAsync(
+                    udp,
+                    node.EndPoint,
+                    "get_peers",
+                    args => args.Entries["info_hash"] = new BencodeString(_infoHash),
+                    lookupCts.Token)));
+
+                var found = new List<PeerInfo>();
+                lock (nodeLock)
+                {
+                    for (var i = 0; i < batch.Count; i++)
                     {
-                        if (rd.Entries.TryGetValue("values", out var values) && values is BencodeList vl)
-                        {
-                            foreach (var v in vl.Items)
-                            {
-                                if (v is BencodeString vs && vs.Bytes.Length == 6)
-                                {
-                                    var d = vs.Bytes;
-                                    var ip = $"{d[0]}.{d[1]}.{d[2]}.{d[3]}";
-                                    var p = (d[4] << 8) | d[5];
-                                    peers.Add(new PeerInfo(ip, p));
-                                }
-                            }
-                        }
+                        var response = responses[i];
+                        if (response == null) continue;
+                        batch[i].Responded = true;
+                        if (response.Entries.TryGetValue("id", out var idValue) && idValue is BencodeString idString &&
+                            idString.Bytes.Length == 20)
+                            batch[i].Id = idString.Bytes;
+
+                        CollectPeers(response, found, seen);
+                        CollectNodes(response, known);
                     }
                 }
-                catch (OperationCanceledException) { break; }
-                catch { }
+
+                foreach (var peer in found)
+                    yield return peer;
             }
         }
-        catch { }
-        return peers.DistinctBy(p => p.Ip + ":" + p.Port).ToList();
+        finally
+        {
+            lookupCts.Cancel();
+            try { await receiveTask; } catch { }
+        }
+
+        System.Console.WriteLine($"[DHT] Опрошено узлов: {queries}, известно узлов: {known.Count}, найдено пиров: {seen.Count}");
     }
 
-    private byte[] BuildGetPeers(int tid)
+    private async Task<BencodeDictionary?> QueryAsync(
+        UdpClient udp,
+        IPEndPoint endpoint,
+        string query,
+        Action<BencodeDictionary> fillArgs,
+        CancellationToken ct)
     {
-        var d = new BencodeDictionary();
-        d.Entries["t"] = new BencodeString(Encoding.ASCII.GetBytes(tid.ToString()));
-        d.Entries["y"] = new BencodeString(Encoding.ASCII.GetBytes("q"));
-        d.Entries["q"] = new BencodeString(Encoding.ASCII.GetBytes("get_peers"));
-        var a = new BencodeDictionary();
-        a.Entries["id"] = new BencodeString(RandomId());
-        a.Entries["info_hash"] = new BencodeString(_infoHash);
-        a.Entries["port"] = new BencodeInt(_port);
-        d.Entries["a"] = a;
-        return BencodeSerializer.Serialize(d);
+        var transactionId = NextTransactionId();
+        var completion = new TaskCompletionSource<BencodeDictionary?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _transactions[transactionId] = completion;
+
+        var message = new BencodeDictionary();
+        message.Entries["t"] = new BencodeString(new[] { (byte)(transactionId >> 8), (byte)transactionId });
+        message.Entries["y"] = new BencodeString(Encoding.ASCII.GetBytes("q"));
+        message.Entries["q"] = new BencodeString(Encoding.ASCII.GetBytes(query));
+
+        var args = new BencodeDictionary();
+        args.Entries["id"] = new BencodeString(_nodeId);
+        fillArgs(args);
+        message.Entries["a"] = args;
+
+        try
+        {
+            await udp.SendAsync(BencodeSerializer.Serialize(message), endpoint, ct);
+            return await completion.Task.WaitAsync(QueryTimeout, ct);
+        }
+        catch (Exception ex) when (ex is TimeoutException or OperationCanceledException or SocketException)
+        {
+            return null;
+        }
+        finally
+        {
+            _transactions.TryRemove(transactionId, out _);
+        }
+    }
+
+    private async Task ReceiveLoopAsync(UdpClient udp, CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                var result = await udp.ReceiveAsync(ct);
+                if (BencodeParser.Parse(result.Buffer) is not BencodeDictionary response) continue;
+                if (!response.Entries.TryGetValue("t", out var transactionValue) ||
+                    transactionValue is not BencodeString transactionString ||
+                    transactionString.Bytes.Length < 2)
+                    continue;
+
+                var transactionId = (transactionString.Bytes[0] << 8) | transactionString.Bytes[1];
+                if (!_transactions.TryGetValue(transactionId, out var completion)) continue;
+
+                BencodeDictionary? reply = null;
+                if (response.Entries.TryGetValue("y", out var typeValue) &&
+                    typeValue is BencodeString typeString && typeString.Text == "r" &&
+                    response.Entries.TryGetValue("r", out var replyValue) &&
+                    replyValue is BencodeDictionary replyDict)
+                    reply = replyDict;
+
+                completion.TrySetResult(reply);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+            catch (SocketException) when (ct.IsCancellationRequested)
+            {
+                return;
+            }
+            catch { }
+        }
+    }
+
+    private static void CollectPeers(BencodeDictionary response, List<PeerInfo> peers, HashSet<string> seen)
+    {
+        if (!response.Entries.TryGetValue("values", out var valuesValue) || valuesValue is not BencodeList values)
+            return;
+
+        foreach (var value in values.Items)
+        {
+            if (value is not BencodeString peerString)
+                continue;
+
+            if (peerString.Bytes.Length == 6)
+            {
+                AddPeer(peerString.Bytes, peers, seen);
+            }
+            else if (peerString.Bytes.Length == 18)
+            {
+                for (var i = 0; i + 18 <= peerString.Bytes.Length; i += 18)
+                    AddPeer(peerString.Bytes.AsSpan(i, 18), peers, seen);
+            }
+        }
+    }
+
+    private static void AddPeer(ReadOnlySpan<byte> bytes, List<PeerInfo> peers, HashSet<string> seen)
+    {
+        if (bytes.Length != 6 && bytes.Length != 18) return;
+
+        string ip;
+        int port;
+        if (bytes.Length == 6)
+        {
+            ip = $"{bytes[0]}.{bytes[1]}.{bytes[2]}.{bytes[3]}";
+            port = (bytes[4] << 8) | bytes[5];
+        }
+        else
+        {
+            ip = new IPAddress(bytes[..16]).ToString();
+            port = (bytes[16] << 8) | bytes[17];
+        }
+
+        if (!IsValidEndpoint(ip, port)) return;
+        var key = $"{ip}:{port}";
+        if (seen.Add(key))
+            peers.Add(new PeerInfo(ip, port));
+    }
+
+    private static void CollectNodes(BencodeDictionary response, Dictionary<string, DhtNode> known)
+    {
+        if (known.Count >= MaxKnownNodes) return;
+        if (!response.Entries.TryGetValue("nodes", out var nodesValue) || nodesValue is not BencodeString nodesString)
+            return;
+
+        var data = nodesString.Bytes;
+        for (var i = 0; i + 26 <= data.Length; i += 26)
+        {
+            var ip = $"{data[i + 20]}.{data[i + 21]}.{data[i + 22]}.{data[i + 23]}";
+            var port = (data[i + 24] << 8) | data[i + 25];
+            if (!IsValidEndpoint(ip, port)) continue;
+            if (!IPAddress.TryParse(ip, out var address)) continue;
+
+            var endpoint = new IPEndPoint(address, port);
+            var key = endpoint.ToString();
+            if (known.ContainsKey(key)) continue;
+
+            known[key] = new DhtNode(endpoint) { Id = data.AsSpan(i, 20).ToArray() };
+            if (known.Count >= MaxKnownNodes) return;
+        }
+    }
+
+    private static async Task<List<IPEndPoint>> ResolveBootstrapAsync(CancellationToken ct)
+    {
+        var tasks = BootstrapHosts.Select(async host =>
+        {
+            try
+            {
+                var addresses = await Dns.GetHostAddressesAsync(host, ct);
+                return addresses
+                    .Where(address => address.AddressFamily == AddressFamily.InterNetwork)
+                    .Select(address => new IPEndPoint(address, BootstrapPort))
+                    .ToList();
+            }
+            catch
+            {
+                return new List<IPEndPoint>();
+            }
+        });
+
+        var resolved = await Task.WhenAll(tasks);
+        return resolved
+            .SelectMany(endpoints => endpoints)
+            .DistinctBy(endpoint => endpoint.ToString())
+            .ToList();
+    }
+
+    private int NextTransactionId()
+    {
+        while (true)
+        {
+            var transactionId = Interlocked.Increment(ref _nextTransaction) & 0xFFFF;
+            if (!_transactions.ContainsKey(transactionId))
+                return transactionId;
+        }
+    }
+
+    private static bool IsValidEndpoint(string ip, int port)
+    {
+        if (port <= 0 || port > 65535) return false;
+        if (!IPAddress.TryParse(ip, out var address)) return false;
+        if (address.AddressFamily != AddressFamily.InterNetwork) return false;
+        if (IPAddress.IsLoopback(address)) return false;
+        if (address.Equals(IPAddress.Any) || address.Equals(IPAddress.Broadcast)) return false;
+        var bytes = address.GetAddressBytes();
+        if (bytes[0] >= 224) return false;
+        return true;
     }
 
     private static byte[] RandomId()
     {
-        var b = new byte[20];
-        Random.Shared.NextBytes(b);
-        return b;
+        var bytes = new byte[20];
+        Random.Shared.NextBytes(bytes);
+        return bytes;
+    }
+
+    private sealed class DhtNode
+    {
+        public DhtNode(IPEndPoint endPoint)
+        {
+            EndPoint = endPoint;
+        }
+
+        public IPEndPoint EndPoint { get; }
+        public byte[]? Id { get; set; }
+        public bool Queried { get; set; }
+        public bool Responded { get; set; }
+        public bool IsBootstrap { get; init; }
+
+        public BigInteger DistanceTo(byte[] target)
+        {
+            if (Id == null) return BigInteger.One << 200;
+            var distance = new byte[Math.Min(Id.Length, target.Length)];
+            for (var i = 0; i < distance.Length; i++)
+                distance[i] = (byte)(Id[i] ^ target[i]);
+            return new BigInteger(distance, isUnsigned: true, isBigEndian: true);
+        }
     }
 }
 

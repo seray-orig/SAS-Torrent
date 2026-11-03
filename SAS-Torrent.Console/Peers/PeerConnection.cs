@@ -1,23 +1,26 @@
-using System.Net.Sockets;
 using System.Security.Cryptography;
+using SAS_Torrent.Console.Peers.Transport;
 using SAS_Torrent.Console.Torrent;
 
 namespace SAS_Torrent.Console.Peers;
 
 public sealed class PeerConnection : IDisposable
 {
-    private readonly TcpClient _client;
+    private readonly IReadOnlyList<IPeerTransport> _transports;
+    private PeerTransportConnection? _transport;
     private Stream? _stream;
     private readonly byte[] _infoHash;
     private readonly string _ourPeerId;
     private readonly SemaphoreSlim _writeLock = new(1, 1);
     private bool _disposed;
 
-    private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(4);
+    private static readonly TimeSpan FallbackDelay = TimeSpan.FromMilliseconds(1000);
     private static readonly TimeSpan HandshakeTimeout = TimeSpan.FromSeconds(10);
 
     public string Ip { get; }
     public int Port { get; }
+    public string TransportName { get; private set; } = "";
     public bool IsConnected { get; private set; }
     public bool IsSeeder { get; private set; }
     public bool GotBitfield { get; private set; }
@@ -29,13 +32,13 @@ public sealed class PeerConnection : IDisposable
     public event Action<PeerConnection, byte[]>? OnPiece;
     public event Action<PeerConnection>? OnDisconnected;
 
-    public PeerConnection(string ip, int port, byte[] infoHash, string ourPeerId)
+    public PeerConnection(string ip, int port, byte[] infoHash, string ourPeerId, IReadOnlyList<IPeerTransport> transports)
     {
         Ip = ip;
         Port = port;
         _infoHash = infoHash;
         _ourPeerId = ourPeerId;
-        _client = new TcpClient();
+        _transports = transports;
         _stream = null;
     }
 
@@ -44,11 +47,16 @@ public sealed class PeerConnection : IDisposable
         try
         {
             System.Console.WriteLine($"[Peer {Ip}:{Port}] Connecting...");
-            await _client.ConnectAsync(Ip, Port, ct).AsTask().WaitAsync(ConnectTimeout, ct);
-            System.Console.WriteLine($"[Peer {Ip}:{Port}] Connected, sending handshake");
+            _transport = await PeerTransportConnector.ConnectAnyAsync(_transports, Ip, Port, ConnectTimeout, FallbackDelay, ct);
+            if (_transport == null)
+            {
+                System.Console.WriteLine($"[Peer {Ip}:{Port}] Ни TCP, ни uTP не ответили");
+                return false;
+            }
 
-            _stream = _client.GetStream();
-            _client.Client.NoDelay = true;
+            TransportName = _transport.Name;
+            _stream = _transport.Stream;
+            System.Console.WriteLine($"[Peer {Ip}:{Port}] Подключение через {TransportName}, отправляем handshake");
 
             var hs = PeerWireMessages.BuildHandshake(_infoHash, _ourPeerId);
             await _stream.WriteAsync(hs, ct);
@@ -79,16 +87,6 @@ public sealed class PeerConnection : IDisposable
             System.Console.WriteLine($"[Peer {Ip}:{Port}] Handshake error: {ex.Message}");
             return false;
         }
-    }
-
-    private static byte[] BuildMseHandshake(byte[] infoHash, string peerId)
-    {
-        var msg = new byte[68];
-        msg[0] = 19;
-        System.Text.Encoding.ASCII.GetBytes("BitTorrent protocol").CopyTo(msg, 1);
-        infoHash.CopyTo(msg, 28);
-        System.Text.Encoding.ASCII.GetBytes(peerId).CopyTo(msg, 48);
-        return msg;
     }
 
     public async Task StartReadingAsync(CancellationToken ct)
@@ -129,8 +127,6 @@ public sealed class PeerConnection : IDisposable
     {
         if (msg.Length == 0) return;
         var id = (PeerMessageId)msg[0];
-        if (id != PeerMessageId.Piece)
-            System.Console.WriteLine($"[Peer {Ip}:{Port}] Got message: {id} (len={msg.Length})");
 
         if (id == PeerMessageId.Bitfield)
         {
@@ -214,7 +210,7 @@ public sealed class PeerConnection : IDisposable
     {
         if (_disposed) return;
         IsConnected = false;
-        try { _client.Close(); } catch { }
+        try { _transport?.Dispose(); } catch { }
         OnDisconnected?.Invoke(this);
     }
 
