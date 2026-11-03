@@ -34,35 +34,34 @@ public sealed class PieceAssembler
         TryAssemble(block.PieceIndex);
     }
 
+    public bool HasBlock(int pieceIndex, int begin)
+    {
+        return _pieces.TryGetValue(pieceIndex, out var blocks) && blocks.ContainsKey(begin);
+    }
+
     private void TryAssemble(int pieceIndex)
     {
-        if (_completed.Contains(pieceIndex)) return;
+        lock (_lock)
+        {
+            if (_completed.Contains(pieceIndex)) return;
+        }
+
         var pieceSize = GetPieceSize(pieceIndex);
         if (!_pieces.TryGetValue(pieceIndex, out var blocks)) return;
-        // check all blocks present
         var blockSize = 16384;
         var numBlocks = (int)Math.Ceiling((double)pieceSize / blockSize);
         for (int i = 0; i < numBlocks; i++)
         {
             if (!blocks.ContainsKey(i * blockSize)) return;
         }
-        // assemble
-        var assembled = new byte[pieceSize];
-        for (int i = 0; i < numBlocks; i++)
-        {
-            var begin = i * blockSize;
-            if (blocks.TryGetValue(begin, out var data))
-            {
-                Array.Copy(data, 0, assembled, begin, data.Length);
-            }
-        }
+
         lock (_lock)
         {
             if (_completed.Contains(pieceIndex)) return;
             _completed.Add(pieceIndex);
         }
+
         OnPieceCompleted?.Invoke(pieceIndex);
-        // store assembled temporarily via event - handled externally
     }
 
     public byte[]? GetAssembled(int pieceIndex)
@@ -100,6 +99,18 @@ public sealed class PieceAssembler
         _pieces.TryRemove(pieceIndex, out _);
     }
 
-    public bool IsComplete() => _completed.Count == _pieceCount;
-    public int CompletedCount() => _completed.Count;
+    public void ReleasePiece(int pieceIndex)
+    {
+        _pieces.TryRemove(pieceIndex, out _);
+    }
+
+    public bool IsComplete()
+    {
+        lock (_lock) return _completed.Count == _pieceCount;
+    }
+
+    public int CompletedCount()
+    {
+        lock (_lock) return _completed.Count;
+    }
 }

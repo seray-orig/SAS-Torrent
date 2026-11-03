@@ -11,6 +11,7 @@ public sealed class FileWriter
     private readonly int _pieceCount;
     private readonly FileStream[] _files;
     private readonly long[] _fileOffsets;
+    private readonly object _writeLock = new();
 
     public FileWriter(TorrentInfo torrent, string downloadDir)
     {
@@ -56,7 +57,8 @@ public sealed class FileWriter
     public void WritePiece(int pieceIndex, int begin, byte[] data)
     {
         var pieceOffset = (long)pieceIndex * _pieceLength + begin;
-        WriteAt(pieceOffset, data);
+        lock (_writeLock)
+            WriteAt(pieceOffset, data);
     }
 
     private void WriteAt(long offset, byte[] data)

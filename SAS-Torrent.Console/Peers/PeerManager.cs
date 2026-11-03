@@ -1,9 +1,11 @@
-using SAS_Torrent.Console.Torrent;
+using SAS_Torrent.Console.Tracker;
 
 namespace SAS_Torrent.Console.Peers;
 
 public sealed class PeerManager
 {
+    private const int DefaultMaxParallelConnects = 64;
+
     private readonly byte[] _infoHash;
     private readonly string _ourPeerId;
     private readonly int _pieceCount;
@@ -17,31 +19,73 @@ public sealed class PeerManager
         _pieceCount = pieceCount;
     }
 
-    public async Task ConnectToPeersAsync(IEnumerable<Tracker.PeerInfo> peers, CancellationToken ct)
+    public async Task ConnectToPeersAsync(
+        IAsyncEnumerable<PeerInfo> peers,
+        CancellationToken ct,
+        int maxParallel = DefaultMaxParallelConnects)
     {
-        foreach (var peer in peers)
+        using var semaphore = new SemaphoreSlim(maxParallel);
+        var pending = new List<Task>();
+
+        try
         {
-            if (ct.IsCancellationRequested) break;
-            var conn = new PeerConnection(peer.Ip, peer.Port, _infoHash, _ourPeerId) { PieceCount = _pieceCount };
-            conn.OnDisconnected += c => RemoveConnection(c);
-            var ok = await conn.ConnectAndHandshakeAsync(ct);
-            if (!ok)
+            await foreach (var peer in peers.WithCancellation(ct))
             {
-                conn.Dispose();
-                continue;
+                await semaphore.WaitAsync(ct);
+                pending.Add(ConnectToPeerDetachedAsync(peer, semaphore, ct));
+                pending.RemoveAll(t => t.IsCompleted);
             }
-            await conn.SendAsync(PeerWireMessages.BuildInterested(), ct);
-            _ = conn.StartReadingAsync(ct);
-            lock (_lock) _connections.Add(conn);
-            await Task.Delay(500, ct);
         }
+        catch (OperationCanceledException) { }
+        finally
+        {
+            try { await Task.WhenAll(pending); } catch { }
+        }
+    }
+
+    private async Task ConnectToPeerDetachedAsync(PeerInfo peer, SemaphoreSlim semaphore, CancellationToken ct)
+    {
+        try
+        {
+            await ConnectToPeerAsync(peer, ct);
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            System.Console.WriteLine($"[Peer {peer.Ip}:{peer.Port}] Ошибка подключения: {ex.Message}");
+        }
+        finally
+        {
+            semaphore.Release();
+        }
+    }
+
+    public async Task<bool> ConnectToPeerAsync(PeerInfo peer, CancellationToken ct)
+    {
+        var conn = new PeerConnection(peer.Ip, peer.Port, _infoHash, _ourPeerId) { PieceCount = _pieceCount };
+        conn.OnDisconnected += RemoveConnection;
+
+        if (!await conn.ConnectAndHandshakeAsync(ct))
+        {
+            conn.Dispose();
+            return false;
+        }
+
+        await conn.SendAsync(PeerWireMessages.BuildInterested(), ct);
+        _ = conn.StartReadingAsync(ct);
+
+        lock (_lock)
+            _connections.Add(conn);
+
+        System.Console.WriteLine($"[Peer {peer.Ip}:{peer.Port}] Подключён, ожидаем битфилд");
+        return true;
     }
 
     public List<PeerConnection> GetSeeders()
     {
         lock (_lock)
         {
-            return _connections.Where(c => c.IsConnected && c.GotBitfield && c.IsSeeder).ToList();
+            return _connections.Where(c => c.IsConnected && c.IsSeeder).ToList();
         }
     }
 

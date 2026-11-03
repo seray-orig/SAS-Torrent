@@ -10,7 +10,11 @@ public sealed class PeerConnection : IDisposable
     private Stream? _stream;
     private readonly byte[] _infoHash;
     private readonly string _ourPeerId;
+    private readonly SemaphoreSlim _writeLock = new(1, 1);
     private bool _disposed;
+
+    private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan HandshakeTimeout = TimeSpan.FromSeconds(10);
 
     public string Ip { get; }
     public int Port { get; }
@@ -40,10 +44,7 @@ public sealed class PeerConnection : IDisposable
         try
         {
             System.Console.WriteLine($"[Peer {Ip}:{Port}] Connecting...");
-            var connectTask = _client.ConnectAsync(Ip, Port);
-            var completed = await Task.WhenAny(connectTask, Task.Delay(5000, ct));
-            if (completed != connectTask) { System.Console.WriteLine($"[Peer {Ip}:{Port}] Connect timeout"); return false; }
-            await connectTask;
+            await _client.ConnectAsync(Ip, Port, ct).AsTask().WaitAsync(ConnectTimeout, ct);
             System.Console.WriteLine($"[Peer {Ip}:{Port}] Connected, sending handshake");
 
             _stream = _client.GetStream();
@@ -57,7 +58,7 @@ public sealed class PeerConnection : IDisposable
             var read = 0;
             while (read < 68)
             {
-                var r = await _stream.ReadAsync(hsBuf.AsMemory(read, 68 - read), ct);
+                var r = await _stream.ReadAsync(hsBuf.AsMemory(read, 68 - read), ct).AsTask().WaitAsync(HandshakeTimeout, ct);
                 if (r == 0) { System.Console.WriteLine($"[Peer {Ip}:{Port}] Handshake read 0"); return false; }
                 read += r;
             }
@@ -128,7 +129,8 @@ public sealed class PeerConnection : IDisposable
     {
         if (msg.Length == 0) return;
         var id = (PeerMessageId)msg[0];
-        System.Console.WriteLine($"[Peer {Ip}:{Port}] Got message: {id} (len={msg.Length})");
+        if (id != PeerMessageId.Piece)
+            System.Console.WriteLine($"[Peer {Ip}:{Port}] Got message: {id} (len={msg.Length})");
 
         if (id == PeerMessageId.Bitfield)
         {
@@ -192,7 +194,15 @@ public sealed class PeerConnection : IDisposable
         if (!IsConnected || _disposed || _stream == null) return;
         try
         {
-            await _stream.WriteAsync(data, ct);
+            await _writeLock.WaitAsync(ct);
+            try
+            {
+                await _stream.WriteAsync(data, ct);
+            }
+            finally
+            {
+                _writeLock.Release();
+            }
         }
         catch
         {
