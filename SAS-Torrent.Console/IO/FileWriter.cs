@@ -22,24 +22,28 @@ public sealed class FileWriter
         Directory.CreateDirectory(downloadDir);
         if (torrent.IsMultiFile)
         {
-            foreach (var f in torrent.Files)
-            {
-                var fullPath = Path.Combine(downloadDir, f.RelativePath);
-                Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
-                using var fs = File.Create(fullPath);
-                fs.SetLength(f.Length);
-            }
-            _files = torrent.Files.Select(f => new FileStream(Path.Combine(downloadDir, f.RelativePath), FileMode.Open, FileAccess.ReadWrite)).ToArray();
+            _files = torrent.Files
+                .Select(f => OpenTarget(Path.Combine(downloadDir, f.RelativePath), f.Length))
+                .ToArray();
             _fileOffsets = BuildOffsets();
         }
         else
         {
-            var fullPath = Path.Combine(downloadDir, torrent.Name);
-            using var fs = File.Create(fullPath);
-            fs.SetLength(torrent.TotalLength);
-            _files = new[] { new FileStream(fullPath, FileMode.Open, FileAccess.ReadWrite) };
+            _files = new[] { OpenTarget(Path.Combine(downloadDir, torrent.Name), torrent.TotalLength) };
             _fileOffsets = new long[] { 0 };
         }
+    }
+
+    private static FileStream OpenTarget(string path, long length)
+    {
+        var directory = Path.GetDirectoryName(path);
+        if (!string.IsNullOrEmpty(directory))
+            Directory.CreateDirectory(directory);
+
+        var stream = new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite);
+        if (stream.Length != length)
+            stream.SetLength(length);
+        return stream;
     }
 
     private long[] BuildOffsets()

@@ -21,6 +21,7 @@ public sealed class DownloadManager
     private readonly TorrentInfo _torrent;
     private readonly PeerManager _peerManager;
     private readonly FileWriter _fileWriter;
+    private readonly DownloadState _state;
     private readonly BitArray _havePieces;
     private readonly int _pieceCount;
     private readonly long _pieceLength;
@@ -37,11 +38,12 @@ public sealed class DownloadManager
     private int _nextPiece;
     private bool _loggedWaiting;
 
-    public DownloadManager(TorrentInfo torrent, PeerManager peerManager, FileWriter fileWriter)
+    public DownloadManager(TorrentInfo torrent, PeerManager peerManager, FileWriter fileWriter, DownloadState state)
     {
         _torrent = torrent;
         _peerManager = peerManager;
         _fileWriter = fileWriter;
+        _state = state;
         _pieceLength = torrent.PieceLength;
         _pieceCount = (int)Math.Ceiling((double)torrent.TotalLength / _pieceLength);
         _blocksPerPiece = (int)Math.Ceiling((double)_pieceLength / BlockSize);
@@ -58,6 +60,8 @@ public sealed class DownloadManager
 
     public async Task<bool> DownloadAsync(CancellationToken ct)
     {
+        RestoreProgress();
+
         var lastCompleted = 0;
         var idleSince = DateTime.UtcNow;
 
@@ -66,6 +70,7 @@ public sealed class DownloadManager
             var seeders = _peerManager.GetSeeders().Where(s => !s.PeerChoking).ToList();
             EnsureSubscribed(seeders);
 
+            bool finished;
             lock (_lock)
             {
                 ReleaseTimedOutPiecesLocked();
@@ -75,8 +80,13 @@ public sealed class DownloadManager
                     idleSince = DateTime.UtcNow;
                 }
 
-                if (_completedPieces >= _pieceCount)
-                    return true;
+                finished = _completedPieces >= _pieceCount;
+            }
+
+            if (finished)
+            {
+                _state.Delete();
+                return true;
             }
 
             if (seeders.Count > 0)
@@ -114,6 +124,41 @@ public sealed class DownloadManager
         }
 
         return false;
+    }
+
+    private void RestoreProgress()
+    {
+        var saved = _state.Pieces;
+        var restored = 0;
+
+        foreach (var piece in saved)
+        {
+            if (!_fileWriter.VerifyPiece(piece)) continue;
+
+            lock (_lock)
+            {
+                if (_havePieces[piece]) continue;
+                _havePieces[piece] = true;
+                _completedPieces++;
+            }
+            restored++;
+        }
+
+        lock (_lock)
+        {
+            _nextPiece = 0;
+            for (var piece = 0; piece < _pieceCount; piece++)
+            {
+                if (_havePieces[piece]) continue;
+                _nextPiece = piece;
+                break;
+            }
+        }
+
+        if (saved.Count == 0)
+            System.Console.WriteLine("[Resume] Сохранённого прогресса нет, начинаем с нуля");
+        else
+            System.Console.WriteLine($"[Resume] Проверено по SHA1 и восстановлено кусков: {restored}/{saved.Count}");
     }
 
     private void SchedulePieces(List<PeerConnection> seeders, CancellationToken ct)
@@ -319,6 +364,7 @@ public sealed class DownloadManager
                 }
             }
 
+            _state.MarkCompleted(pieceIndex);
             _assembler.ReleasePiece(pieceIndex);
             System.Console.WriteLine($"[DL] Кусок {pieceIndex} проверен и записан. Прогресс: {CompletedPieces}/{_pieceCount}");
         }

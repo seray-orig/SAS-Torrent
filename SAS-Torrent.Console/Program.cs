@@ -32,26 +32,36 @@ try
     var peerManager = new PeerManager(torrent.InfoHash, peerId, pieceCount);
     var discovery = new PeerDiscovery(torrent, peerId, port);
     using var cts = new CancellationTokenSource();
+    Console.CancelKeyPress += (_, e) =>
+    {
+        e.Cancel = true;
+        cts.Cancel();
+    };
+
+    var state = DownloadState.Load(torrent);
+    if (state.Pieces.Count > 0)
+        Console.WriteLine($"[Resume] Найден прогресс: {state.Pieces.Count} кусков ({state.FilePath})");
 
     Console.WriteLine("Параллельный поиск пиров (трекеры и DHT) и подключение...");
     var connectTask = peerManager.ConnectToPeersAsync(discovery.DiscoverAsync(cts.Token), cts.Token);
 
     Directory.CreateDirectory(downloadDir);
     var fileWriter = new FileWriter(torrent, downloadDir);
-    var downloadManager = new DownloadManager(torrent, peerManager, fileWriter);
+    var downloadManager = new DownloadManager(torrent, peerManager, fileWriter, state);
 
     var completed = await downloadManager.DownloadAsync(cts.Token);
 
     cts.Cancel();
     try { await connectTask; } catch (OperationCanceledException) { }
 
+    state.Flush();
     fileWriter.Close();
     peerManager.DisconnectAll();
 
     if (completed)
         Console.WriteLine("Готово.");
     else
-        Console.WriteLine($"Загрузка не завершена. Кусков: {downloadManager.CompletedPieces}/{pieceCount}");
+        Console.WriteLine($"Загрузка не завершена. Кусков: {downloadManager.CompletedPieces}/{pieceCount}. Прогресс сохранён: {state.FilePath}");
 }
 catch (Exception ex)
 {
