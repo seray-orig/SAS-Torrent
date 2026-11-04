@@ -16,22 +16,30 @@ public sealed class FileWriter
     public FileWriter(TorrentInfo torrent, string downloadDir)
     {
         _torrent = torrent;
-        _downloadDir = downloadDir;
+        _downloadDir = Path.Combine(downloadDir, SanitizeName(torrent.Name));
         _pieceLength = torrent.PieceLength;
         _pieceCount = (int)Math.Ceiling((double)torrent.TotalLength / _pieceLength);
-        Directory.CreateDirectory(downloadDir);
+        Directory.CreateDirectory(_downloadDir);
         if (torrent.IsMultiFile)
         {
             _files = torrent.Files
-                .Select(f => OpenTarget(Path.Combine(downloadDir, f.RelativePath), f.Length))
+                .Select(f => OpenTarget(Path.Combine(_downloadDir, f.RelativePath), f.Length))
                 .ToArray();
             _fileOffsets = BuildOffsets();
         }
         else
         {
-            _files = new[] { OpenTarget(Path.Combine(downloadDir, torrent.Name), torrent.TotalLength) };
+            _files = new[] { OpenTarget(Path.Combine(_downloadDir, SanitizeName(torrent.Name)), torrent.TotalLength) };
             _fileOffsets = new long[] { 0 };
         }
+    }
+
+    private static string SanitizeName(string name)
+    {
+        var invalid = Path.GetInvalidFileNameChars();
+        var sanitized = new string(name.Select(c => invalid.Contains(c) ? '_' : c).ToArray()).Trim();
+        sanitized = sanitized.TrimEnd('.');
+        return string.IsNullOrEmpty(sanitized) ? "torrent" : sanitized;
     }
 
     private static FileStream OpenTarget(string path, long length)
