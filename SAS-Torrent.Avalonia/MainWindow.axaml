@@ -4,10 +4,10 @@
         x:Class="SAS_Torrent.Avalonia.MainWindow"
         x:CompileBindings="True"
         Title="SAS Torrent"
-        Width="500"
-        Height="350"
-        MinWidth="500"
-        MinHeight="350">
+        Width="700"
+        Height="500"
+        MinWidth="400"
+        MinHeight="250">
   <Grid Margin="12">
     <Grid x:Name="SelectionView" RowDefinitions="Auto,Auto,*,Auto" RowSpacing="8">
       <StackPanel Grid.Row="0" Spacing="6">
@@ -148,6 +148,40 @@
                    TextWrapping="Wrap"
                    MaxLines="2" />
       </StackPanel>
+
+      <Expander x:Name="LogExpander"
+                Grid.Row="5"
+                Header="Логи"
+                IsExpanded="False"
+                VerticalAlignment="Bottom"
+                HorizontalAlignment="Stretch">
+        <Border BorderBrush="#33808080"
+                BorderThickness="1"
+                CornerRadius="4"
+                Margin="0,4,0,0"
+                ClipToBounds="True">
+          <ListBox x:Name="LogListBox"
+                   Background="Transparent"
+                   BorderThickness="0"
+                   Padding="2"
+                   MinHeight="80"
+                   MaxHeight="160"
+                   FontFamily="Consolas,Menlo,monospace"
+                   FontSize="11">
+            <ListBox.Styles>
+              <Style Selector="ListBoxItem">
+                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                <Setter Property="Padding" Value="4,1" />
+              </Style>
+            </ListBox.Styles>
+            <ListBox.ItemTemplate>
+              <DataTemplate>
+                <TextBlock Text="{Binding}" TextWrapping="Wrap" />
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </Border>
+      </Expander>
     </Grid>
   </Grid>
 </Window>

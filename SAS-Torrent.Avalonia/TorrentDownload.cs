@@ -30,6 +30,8 @@ public sealed class TorrentDownload
 
     public int CompletedPieces => _manager?.CompletedPieces ?? 0;
 
+    public int ActivePeerCount => _manager?.ActivePeerCount ?? 0;
+
     public void Stop() => _cts?.Cancel();
 
     public void FlushState() => _state?.Flush();

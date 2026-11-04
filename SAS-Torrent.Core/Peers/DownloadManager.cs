@@ -74,6 +74,24 @@ public sealed class DownloadManager
         get { lock (_lock) return _completedPieces; }
     }
 
+    public int ActivePeerCount
+    {
+        get
+        {
+            lock (_lock)
+            {
+                if (_inFlight.Count == 0)
+                    return 0;
+
+                var peers = new HashSet<PeerConnection>();
+                foreach (var inFlight in _inFlight.Values)
+                    peers.Add(inFlight.Peer);
+
+                return peers.Count;
+            }
+        }
+    }
+
     public async Task<bool> DownloadAsync(CancellationToken ct)
     {
         RestoreProgress();

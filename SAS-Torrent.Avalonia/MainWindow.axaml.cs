@@ -15,6 +15,7 @@ namespace SAS_Torrent.Avalonia;
 public partial class MainWindow : Window
 {
     private readonly ObservableCollection<FileEntry> _fileEntries = new();
+    private readonly ObservableCollection<string> _logEntries = new();
 
     private AppConfig _config = new();
     private TorrentInfo? _torrent;
@@ -26,6 +27,7 @@ public partial class MainWindow : Window
     private DispatcherTimer? _progressTimer;
 
     private bool _isDownloading;
+    private bool _stopRequested;
     private bool _lastRunCompleted;
     private int _downloadTotalPieces;
 
@@ -39,6 +41,7 @@ public partial class MainWindow : Window
         DownloadFolderBox.Text = defaultFolder;
         _lastDownloadFolder = defaultFolder;
         FilesListBox.ItemsSource = _fileEntries;
+        LogListBox.ItemsSource = _logEntries;
 
         DragDrop.SetAllowDrop(this, true);
         AddHandler(DragDrop.DragOverEvent, OnDragOver);
@@ -306,8 +309,11 @@ public partial class MainWindow : Window
 
         SetStatus(string.Empty);
         _isDownloading = true;
+        _stopRequested = false;
         _lastRunCompleted = false;
         _downloadTotalPieces = total;
+
+        _logEntries.Clear();
 
         TorrentPathBox.IsEnabled = false;
         DownloadFolderBox.IsEnabled = false;
@@ -318,7 +324,7 @@ public partial class MainWindow : Window
         DownloadProgressBar.Minimum = 0;
         DownloadProgressBar.Maximum = total;
         DownloadProgressBar.Value = 0;
-        DownloadStatusText.Text = "Поиск пиров...";
+        DownloadStatusText.Text = "Активных соединений: 0";
         StopButton.IsEnabled = true;
         StopButton.Content = "Stop";
 
@@ -326,7 +332,7 @@ public partial class MainWindow : Window
         DownloadView.IsVisible = true;
 
         _downloadCts = new CancellationTokenSource();
-        _download = new TorrentDownload(_torrent, downloadDir);
+        _download = new TorrentDownload(_torrent, downloadDir, new UiTorrentLogger(AppendLog));
         StartProgressTimer();
 
         var completed = false;
@@ -386,6 +392,7 @@ public partial class MainWindow : Window
 
         StopButton.IsEnabled = false;
         StopButton.Content = "Остановка...";
+        _stopRequested = true;
         DownloadStatusText.Text = "Останавливаем загрузку...";
         _download?.Stop();
     }
@@ -428,6 +435,20 @@ public partial class MainWindow : Window
         var completed = download.CompletedPieces;
         DownloadProgressText.Text = $"{completed} / {_downloadTotalPieces}";
         DownloadProgressBar.Value = Math.Clamp(completed, 0, Math.Max(1, _downloadTotalPieces));
+
+        if (!_stopRequested)
+            DownloadStatusText.Text = $"Активных соединений: {download.ActivePeerCount}";
+    }
+
+    private void AppendLog(string text)
+    {
+        _logEntries.Add(text);
+
+        while (_logEntries.Count > 1000)
+            _logEntries.RemoveAt(0);
+
+        if (_logEntries.Count > 0)
+            LogListBox.ScrollIntoView(_logEntries[^1]);
     }
 
     private void OnDragOver(object? sender, DragEventArgs e)
