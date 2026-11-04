@@ -1,5 +1,6 @@
 ﻿using System.Security.Cryptography;
 using SAS_Torrent.Core.Bencode;
+using SAS_Torrent.Core.Config;
 using SAS_Torrent.Core.IO;
 using SAS_Torrent.Core.Logging;
 using SAS_Torrent.Core.Peers;
@@ -12,8 +13,15 @@ if (args.Length == 0)
     return;
 }
 
+var config = AppConfig.Load();
+var baseDownloadsFolder = config.ResolveDownloadsFolder();
+
+if (!File.Exists(AppConfig.GetConfigPath()))
+    AppConfig.Save(config);
+
 var torrentPath = args[0];
-var downloadDir = args.Length > 1 ? args[1] : Path.Combine(Directory.GetCurrentDirectory(), "downloads");
+
+string downloadDir;
 
 try
 {
@@ -22,6 +30,12 @@ try
     if (root == null) throw new Exception("Неверный торрент-файл");
 
     var torrent = new TorrentInfo(root);
+
+    if (args.Length > 1)
+        downloadDir = args[1];
+    else
+        downloadDir = Path.Combine(baseDownloadsFolder, FileWriter.SanitizeName(torrent.Name));
+
     var pieceCount = (int)Math.Ceiling((double)torrent.TotalLength / torrent.PieceLength);
 
     // --- Выбор файлов для скачивания ---
