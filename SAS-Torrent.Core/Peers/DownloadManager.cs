@@ -384,7 +384,7 @@ public sealed class DownloadManager
 
             _state.MarkCompleted(pieceIndex);
             _assembler.ReleasePiece(pieceIndex);
-            _logger?.Log($"[DL] Кусок {pieceIndex} проверен и записан. Прогресс: {CompletedPieces}/{_pieceCount}");
+            _logger?.Log($"[DL] Кусок {pieceIndex} проверен и записан. Прогресс: {CompletedPieces}/{_selectedPieceCount}");
             _journal?.UpdateProgress(_completedPieces);
         }
         else
