@@ -62,7 +62,7 @@ public sealed class DownloadState
 
     public static string GetPath(TorrentInfo torrent, string downloadDir)
     {
-        var directory = Path.Combine(downloadDir, FileWriter.SanitizeName(torrent.Name));
+        var directory = downloadDir;
         var fileName = Convert.ToHexString(torrent.InfoHash).ToLowerInvariant() + ".progress";
         return Path.Combine(directory, fileName);
     }

@@ -17,7 +17,7 @@ public sealed class FileWriter
     public FileWriter(TorrentInfo torrent, string downloadDir)
     {
         _torrent = torrent;
-        _downloadDir = Path.Combine(downloadDir, SanitizeName(torrent.Name));
+        _downloadDir = downloadDir;
         _pieceLength = torrent.PieceLength;
         _pieceCount = (int)Math.Ceiling((double)torrent.TotalLength / _pieceLength);
 
