@@ -12,6 +12,12 @@ public sealed class AppConfig
     [JsonPropertyName("downloadsFolderName")]
     public string? DownloadsFolderName { get; set; } = DefaultDownloadsFolderName;
 
+    [JsonPropertyName("customDownloadsFolderPath")]
+    public string? CustomDownloadsFolderPath { get; set; }
+
+    [JsonIgnore]
+    public bool HasCustomDownloadsPath => !string.IsNullOrWhiteSpace(CustomDownloadsFolderPath);
+
     public static string GetAppDataDirectory()
     {
         var root = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
@@ -73,15 +79,35 @@ public sealed class AppConfig
         File.WriteAllText(path, json);
     }
 
-    public string ResolveDownloadsFolder(string? baseDirectory = null)
+    public string GetDefaultDownloadsFolder(string? baseDirectory = null)
     {
-        var name = string.IsNullOrWhiteSpace(DownloadsFolderName) ? DefaultDownloadsFolderName : DownloadsFolderName;
-        var dir = baseDirectory ?? GetAppDataDirectory();
-
-        if (Path.IsPathRooted(name))
-            return name;
+        var name = string.IsNullOrWhiteSpace(DownloadsFolderName)
+            ? DefaultDownloadsFolderName
+            : DownloadsFolderName.Trim();
+        var dir = baseDirectory ?? AppContext.BaseDirectory;
 
         return Path.Combine(dir, name);
+    }
+
+    public string ResolveDownloadsFolder(string? baseDirectory = null)
+    {
+        if (HasCustomDownloadsPath)
+        {
+            var path = CustomDownloadsFolderPath!.Trim();
+            return Path.IsPathRooted(path)
+                ? path
+                : Path.Combine(baseDirectory ?? AppContext.BaseDirectory, path);
+        }
+
+        return GetDefaultDownloadsFolder(baseDirectory);
+    }
+
+    public string ResolveDownloadDirectory(string torrentFolderName, string? baseDirectory = null)
+    {
+        if (HasCustomDownloadsPath)
+            return ResolveDownloadsFolder(baseDirectory);
+
+        return Path.Combine(GetDefaultDownloadsFolder(baseDirectory), torrentFolderName);
     }
 }
 

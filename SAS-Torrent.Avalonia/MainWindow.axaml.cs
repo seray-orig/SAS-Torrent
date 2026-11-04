@@ -7,6 +7,7 @@ using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using SAS_Torrent.Core.Bencode;
 using SAS_Torrent.Core.Config;
+using SAS_Torrent.Core.IO;
 using SAS_Torrent.Core.Torrent;
 
 namespace SAS_Torrent.Avalonia;
@@ -15,6 +16,7 @@ public partial class MainWindow : Window
 {
     private readonly ObservableCollection<FileEntry> _fileEntries = new();
 
+    private AppConfig _config = new();
     private TorrentInfo? _torrent;
     private string _lastTorrentPath = string.Empty;
     private string _lastDownloadFolder = string.Empty;
@@ -31,14 +33,8 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
 
-        var defaultFolder = ResolveDefaultDownloadFolder();
-        try
-        {
-            Directory.CreateDirectory(defaultFolder);
-        }
-        catch
-        {
-        }
+        _config = LoadConfig();
+        var defaultFolder = _config.ResolveDownloadsFolder();
 
         DownloadFolderBox.Text = defaultFolder;
         _lastDownloadFolder = defaultFolder;
@@ -52,15 +48,15 @@ public partial class MainWindow : Window
         UpdateSelectionProgress();
     }
 
-    private static string ResolveDefaultDownloadFolder()
+    private static AppConfig LoadConfig()
     {
         try
         {
-            return AppConfig.EnsureCreated().ResolveDownloadsFolder();
+            return AppConfig.EnsureCreated();
         }
         catch
         {
-            return Path.Combine(AppConfig.GetAppDataDirectory(), "downloads");
+            return new AppConfig();
         }
     }
 
@@ -245,11 +241,46 @@ public partial class MainWindow : Window
             ? total
             : TorrentSelection.CountSavedSelectedPieces(
                 _torrent,
-                DownloadFolderBox.Text?.Trim() ?? string.Empty,
+                GetEffectiveDownloadDirectory(_torrent),
                 _torrent.Files);
 
         SelectionProgressText.Text = $"{current} / {total}";
         DownloadButton.IsEnabled = !_isDownloading && total > 0;
+    }
+
+    private string GetEffectiveDownloadDirectory(TorrentInfo torrent)
+    {
+        var selected = DownloadFolderBox.Text?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(selected))
+            return selected;
+
+        if (_config.HasCustomDownloadsPath)
+            return selected;
+
+        var defaultFolder = _config.GetDefaultDownloadsFolder();
+        if (!PathsEqual(selected, defaultFolder))
+            return selected;
+
+        return Path.Combine(selected, FileWriter.SanitizeName(torrent.Name));
+    }
+
+    private static bool PathsEqual(string left, string right)
+    {
+        try
+        {
+            var comparison = OperatingSystem.IsWindows()
+                ? StringComparison.OrdinalIgnoreCase
+                : StringComparison.Ordinal;
+
+            return string.Equals(
+                Path.TrimEndingDirectorySeparator(Path.GetFullPath(left)),
+                Path.TrimEndingDirectorySeparator(Path.GetFullPath(right)),
+                comparison);
+        }
+        catch
+        {
+            return string.Equals(left.Trim(), right.Trim(), StringComparison.OrdinalIgnoreCase);
+        }
     }
 
     private async void OnDownloadClick(object? sender, RoutedEventArgs e)
@@ -271,15 +302,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        try
-        {
-            Directory.CreateDirectory(folder);
-        }
-        catch (Exception ex)
-        {
-            SetStatus($"Не удалось создать папку: {ex.Message}");
-            return;
-        }
+        var downloadDir = GetEffectiveDownloadDirectory(_torrent);
 
         SetStatus(string.Empty);
         _isDownloading = true;
@@ -303,7 +326,7 @@ public partial class MainWindow : Window
         DownloadView.IsVisible = true;
 
         _downloadCts = new CancellationTokenSource();
-        _download = new TorrentDownload(_torrent, folder);
+        _download = new TorrentDownload(_torrent, downloadDir);
         StartProgressTimer();
 
         var completed = false;

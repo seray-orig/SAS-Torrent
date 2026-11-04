@@ -14,17 +14,45 @@ public class AppConfigTests
     }
 
     [Fact]
-    public void ResolveDownloadsFolder_Default_UsesAppDataDirectory()
+    public void ResolveDownloadsFolder_Default_UsesProgramDirectory()
     {
         var config = new AppConfig();
 
         Assert.Equal(
-            Path.Combine(AppConfig.GetAppDataDirectory(), "downloads"),
+            Path.Combine(AppContext.BaseDirectory, "downloads"),
             config.ResolveDownloadsFolder());
     }
 
     [Fact]
-    public void EnsureCreated_CreatesConfigFile_WithDefaultDownloadsFolder()
+    public void ResolveDownloadsFolder_CustomPath_IsUsedAsIs()
+    {
+        var customPath = Path.Combine(Path.GetTempPath(), "custom-downloads");
+        var config = new AppConfig { CustomDownloadsFolderPath = customPath };
+
+        Assert.Equal(customPath, config.ResolveDownloadsFolder());
+    }
+
+    [Fact]
+    public void ResolveDownloadDirectory_Default_AddsTorrentSubfolder()
+    {
+        var config = new AppConfig { DownloadsFolderName = "my-downloads" };
+
+        Assert.Equal(
+            Path.Combine(AppContext.BaseDirectory, "my-downloads", "TorrentName"),
+            config.ResolveDownloadDirectory("TorrentName"));
+    }
+
+    [Fact]
+    public void ResolveDownloadDirectory_CustomPath_DoesNotAddTorrentSubfolder()
+    {
+        var customPath = Path.Combine(Path.GetTempPath(), "custom-downloads");
+        var config = new AppConfig { CustomDownloadsFolderPath = customPath };
+
+        Assert.Equal(customPath, config.ResolveDownloadDirectory("TorrentName"));
+    }
+
+    [Fact]
+    public void EnsureCreated_CreatesConfigFile_WithDefaults()
     {
         var directory = Path.Combine(
             Path.GetTempPath(),
@@ -35,10 +63,14 @@ public class AppConfigTests
         {
             var config = AppConfig.EnsureCreated(directory);
             var path = AppConfig.GetConfigPath(directory);
+            var json = File.ReadAllText(path);
 
             Assert.True(File.Exists(path));
             Assert.Equal("downloads", config.DownloadsFolderName);
-            Assert.Contains("\"downloadsFolderName\": \"downloads\"", File.ReadAllText(path));
+            Assert.Null(config.CustomDownloadsFolderPath);
+            Assert.Contains("\"downloadsFolderName\": \"downloads\"", json);
+            Assert.Contains("\"customDownloadsFolderPath\": null", json);
+            Assert.DoesNotContain("HasCustomDownloadsPath", json);
         }
         finally
         {

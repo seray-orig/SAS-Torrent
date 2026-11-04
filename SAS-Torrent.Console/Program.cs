@@ -14,7 +14,6 @@ if (args.Length == 0)
 }
 
 var config = AppConfig.EnsureCreated();
-var baseDownloadsFolder = config.ResolveDownloadsFolder();
 
 var torrentPath = args[0];
 
@@ -31,7 +30,7 @@ try
     if (args.Length > 1)
         downloadDir = args[1];
     else
-        downloadDir = Path.Combine(baseDownloadsFolder, FileWriter.SanitizeName(torrent.Name));
+        downloadDir = config.ResolveDownloadDirectory(FileWriter.SanitizeName(torrent.Name));
 
     var pieceCount = (int)Math.Ceiling((double)torrent.TotalLength / torrent.PieceLength);
 
