@@ -44,7 +44,7 @@ public sealed class FileWriter
         return count;
     }
 
-    private static string SanitizeName(string name)
+    public static string SanitizeName(string name)
     {
         var invalid = Path.GetInvalidFileNameChars();
         var sanitized = new string(name.Select(c => invalid.Contains(c) ? '_' : c).ToArray()).Trim();
