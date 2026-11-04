@@ -56,11 +56,11 @@ public partial class MainWindow : Window
     {
         try
         {
-            return AppConfig.Load().ResolveDownloadsFolder();
+            return AppConfig.EnsureCreated().ResolveDownloadsFolder();
         }
         catch
         {
-            return Path.Combine(AppContext.BaseDirectory, "downloads");
+            return Path.Combine(AppConfig.GetAppDataDirectory(), "downloads");
         }
     }
 

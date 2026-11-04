@@ -13,11 +13,8 @@ if (args.Length == 0)
     return;
 }
 
-var config = AppConfig.Load();
+var config = AppConfig.EnsureCreated();
 var baseDownloadsFolder = config.ResolveDownloadsFolder();
-
-if (!File.Exists(AppConfig.GetConfigPath()))
-    AppConfig.Save(config);
 
 var torrentPath = args[0];
 
