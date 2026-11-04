@@ -9,9 +9,10 @@ public sealed class FileWriter
     private readonly string _downloadDir;
     private readonly long _pieceLength;
     private readonly int _pieceCount;
-    private readonly FileStream[] _files;
+    private readonly FileStream?[] _files;
     private readonly long[] _fileOffsets;
     private readonly object _writeLock = new();
+    public int SelectedPieceCount { get; }
 
     public FileWriter(TorrentInfo torrent, string downloadDir)
     {
@@ -19,19 +20,28 @@ public sealed class FileWriter
         _downloadDir = Path.Combine(downloadDir, SanitizeName(torrent.Name));
         _pieceLength = torrent.PieceLength;
         _pieceCount = (int)Math.Ceiling((double)torrent.TotalLength / _pieceLength);
+
+        _files = new FileStream?[torrent.Files.Count];
+        _fileOffsets = BuildOffsets();
+
+        SelectedPieceCount = ComputeSelectedPieceCount();
+
         Directory.CreateDirectory(_downloadDir);
-        if (torrent.IsMultiFile)
+        for (int i = 0; i < torrent.Files.Count; i++)
         {
-            _files = torrent.Files
-                .Select(f => OpenTarget(Path.Combine(_downloadDir, f.RelativePath), f.Length))
-                .ToArray();
-            _fileOffsets = BuildOffsets();
+            if (!torrent.Files[i].IsSelected) continue;
+
+            var path = Path.Combine(_downloadDir, SanitizeName(torrent.Files[i].RelativePath));
+            _files[i] = OpenTarget(path, torrent.Files[i].Length);
         }
-        else
-        {
-            _files = new[] { OpenTarget(Path.Combine(_downloadDir, SanitizeName(torrent.Name)), torrent.TotalLength) };
-            _fileOffsets = new long[] { 0 };
-        }
+    }
+
+    private int ComputeSelectedPieceCount()
+    {
+        var count = 0;
+        for (int p = 0; p < _pieceCount; p++)
+            if (IsPieceRelevant(p)) count++;
+        return count;
     }
 
     private static string SanitizeName(string name)
@@ -66,6 +76,24 @@ public sealed class FileWriter
         return offsets;
     }
 
+    public bool IsPieceRelevant(int pieceIndex)
+    {
+        var start = (long)pieceIndex * _pieceLength;
+        var pieceSize = GetPieceSize(pieceIndex);
+        var end = start + pieceSize;
+
+        for (int i = 0; i < _torrent.Files.Count; i++)
+        {
+            if (!_torrent.Files[i].IsSelected) continue;
+            var fileStart = _fileOffsets[i];
+            var fileEnd = fileStart + _torrent.Files[i].Length;
+            if (start < fileEnd && end > fileStart)
+                return true;
+        }
+
+        return false;
+    }
+
     public void WritePiece(int pieceIndex, int begin, byte[] data)
     {
         var pieceOffset = (long)pieceIndex * _pieceLength + begin;
@@ -80,6 +108,8 @@ public sealed class FileWriter
         long pos = offset;
         for (int i = 0; i < _files.Length && remaining > 0; i++)
         {
+            if (_files[i] == null) continue;
+
             var fileStart = _fileOffsets[i];
             var fileEnd = fileStart + _torrent.Files[i].Length;
             if (pos >= fileEnd) continue;
@@ -88,8 +118,8 @@ public sealed class FileWriter
             var writeEnd = Math.Min(pos + remaining, fileEnd);
             var writeLen = (int)(writeEnd - writeStart);
             if (writeLen <= 0) continue;
-            _files[i].Seek(writeStart - fileStart, SeekOrigin.Begin);
-            _files[i].Write(data, dataOffset + (int)(writeStart - pos), writeLen);
+            _files[i]!.Seek(writeStart - fileStart, SeekOrigin.Begin);
+            _files[i]!.Write(data, dataOffset + (int)(writeStart - pos), writeLen);
             remaining -= writeLen;
             pos = writeEnd;
         }
@@ -116,6 +146,8 @@ public sealed class FileWriter
         long pos = offset;
         for (int i = 0; i < _files.Length && remaining > 0; i++)
         {
+            if (_files[i] == null) continue;
+
             var fileStart = _fileOffsets[i];
             var fileEnd = fileStart + _torrent.Files[i].Length;
             if (pos >= fileEnd) continue;
@@ -124,8 +156,8 @@ public sealed class FileWriter
             var readEnd = Math.Min(pos + remaining, fileEnd);
             var readLen = (int)(readEnd - readStart);
             if (readLen <= 0) continue;
-            _files[i].Seek(readStart - fileStart, SeekOrigin.Begin);
-            _files[i].ReadExactly(buffer, bufOffset + (int)(readStart - pos), readLen);
+            _files[i]!.Seek(readStart - fileStart, SeekOrigin.Begin);
+            _files[i]!.ReadExactly(buffer, bufOffset + (int)(readStart - pos), readLen);
             remaining -= readLen;
             pos = readEnd;
         }
@@ -133,6 +165,17 @@ public sealed class FileWriter
 
     public void Close()
     {
-        foreach (var f in _files) try { f.Dispose(); } catch { }
+        foreach (var f in _files)
+            if (f != null) try { f.Dispose(); } catch { }
+    }
+
+    private int GetPieceSize(int pieceIndex)
+    {
+        if (pieceIndex == _pieceCount - 1)
+        {
+            var last = _torrent.TotalLength % _pieceLength;
+            return last == 0 ? (int)_pieceLength : (int)last;
+        }
+        return (int)_pieceLength;
     }
 }

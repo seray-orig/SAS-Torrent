@@ -64,7 +64,7 @@ public sealed class TorrentInfo
         {
             IsMultiFile = false;
             TotalLength = lengthInt.Value;
-            Files.Add(new TorrentFile(Name, TotalLength));
+            Files.Add(new TorrentFile(Files.Count, Name, TotalLength));
         }
         else if (infoDict.Entries.TryGetValue("files", out var filesVal) && filesVal is BencodeList filesList)
         {
@@ -76,7 +76,7 @@ public sealed class TorrentInfo
                 if (!fDict.Entries.TryGetValue("path", out var pathVal) || pathVal is not BencodeList pathList) continue;
                 var parts = pathList.Items.OfType<BencodeString>().Select(p => p.Text).ToList();
                 var relPath = Path.Combine(parts.ToArray());
-                Files.Add(new TorrentFile(relPath, flInt.Value));
+                Files.Add(new TorrentFile(Files.Count, relPath, flInt.Value));
                 TotalLength += flInt.Value;
             }
         }
@@ -157,11 +157,14 @@ public sealed class TorrentInfo
 
 public sealed class TorrentFile
 {
+    public int Index { get; }
     public string RelativePath { get; }
     public long Length { get; }
+    public bool IsSelected { get; set; } = true;
 
-    public TorrentFile(string relativePath, long length)
+    public TorrentFile(int index, string relativePath, long length)
     {
+        Index = index;
         RelativePath = relativePath;
         Length = length;
     }

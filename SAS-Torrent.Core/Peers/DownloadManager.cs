@@ -38,6 +38,7 @@ public sealed class DownloadManager
     private int _completedPieces;
     private int _nextPiece;
     private bool _loggedWaiting;
+    private readonly int _selectedPieceCount;
     private readonly ITorrentLogger? _logger;
     private readonly TorrentJournal? _journal;
 
@@ -56,6 +57,16 @@ public sealed class DownloadManager
         _assembler.OnPieceCompleted += OnPieceCompleted;
         _logger = logger;
         _journal = journal;
+
+        _selectedPieceCount = ComputeSelectedPieceCount();
+    }
+
+    private int ComputeSelectedPieceCount()
+    {
+        var count = 0;
+        for (int p = 0; p < _pieceCount; p++)
+            if (_fileWriter.IsPieceRelevant(p)) count++;
+        return count;
     }
 
     public int CompletedPieces
@@ -85,7 +96,7 @@ public sealed class DownloadManager
                     idleSince = DateTime.UtcNow;
                 }
 
-                finished = _completedPieces >= _pieceCount;
+                finished = _completedPieces >= _selectedPieceCount;
             }
 
             if (finished)
@@ -139,6 +150,7 @@ public sealed class DownloadManager
         foreach (var piece in saved)
         {
             if (!_fileWriter.VerifyPiece(piece)) continue;
+            if (!_fileWriter.IsPieceRelevant(piece)) continue;
 
             lock (_lock)
             {
@@ -264,6 +276,7 @@ public sealed class DownloadManager
         {
             var piece = (_nextPiece + step) % _pieceCount;
             if (_havePieces[piece] || _inFlight.ContainsKey(piece)) continue;
+            if (!_fileWriter.IsPieceRelevant(piece)) continue;
             if (IsBannedLocked(piece, peer)) continue;
             _nextPiece = (piece + 1) % _pieceCount;
             return piece;

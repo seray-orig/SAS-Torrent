@@ -24,7 +24,42 @@ try
     var torrent = new TorrentInfo(root);
     var pieceCount = (int)Math.Ceiling((double)torrent.TotalLength / torrent.PieceLength);
 
-    var journal = new TorrentJournal(torrent.Name, torrent.TotalLength, pieceCount);
+    // --- Выбор файлов для скачивания ---
+    Console.WriteLine($"Торрент: {torrent.Name}");
+    Console.WriteLine($"Размер: {torrent.TotalLength} байт");
+    Console.WriteLine($"Файлов: {torrent.Files.Count}");
+    Console.WriteLine();
+
+    for (int i = 0; i < torrent.Files.Count; i++)
+    {
+        var f = torrent.Files[i];
+        Console.WriteLine($"  [{i}] {f.RelativePath} ({f.Length} байт)");
+    }
+
+    if (torrent.Files.Count > 1)
+    {
+        Console.WriteLine();
+        Console.Write("Введите номера файлов для ПРОПУСКА (через запятую), или Enter чтобы скачать всё: ");
+        var skipInput = Console.ReadLine();
+        if (!string.IsNullOrWhiteSpace(skipInput))
+        {
+            foreach (var part in skipInput.Split(','))
+            {
+                var trimmed = part.Trim();
+                if (int.TryParse(trimmed, out var idx) && idx >= 0 && idx < torrent.Files.Count)
+                    torrent.Files[idx].IsSelected = false;
+            }
+        }
+    }
+
+    var selectedFiles = torrent.Files.Count(f => f.IsSelected);
+    Console.WriteLine($"Будут скачаны файлов: {selectedFiles} из {torrent.Files.Count}");
+    Console.WriteLine();
+
+    var fileWriter = new FileWriter(torrent, downloadDir);
+    var selectedPieceCount = fileWriter.SelectedPieceCount;
+
+    var journal = new TorrentJournal(torrent.Name, torrent.TotalLength, selectedPieceCount);
     var logger = new ConsoleLogger();
     logger.Log(journal.GetSummary());
 
@@ -48,7 +83,6 @@ try
     var connectTask = peerManager.ConnectToPeersAsync(discovery.DiscoverAsync(cts.Token), cts.Token);
 
     Directory.CreateDirectory(downloadDir);
-    var fileWriter = new FileWriter(torrent, downloadDir);
     var downloadManager = new DownloadManager(torrent, peerManager, fileWriter, state, logger, journal);
 
     var completed = await downloadManager.DownloadAsync(cts.Token);
@@ -65,7 +99,7 @@ try
     if (completed)
         logger.Log("Готово.");
     else
-        logger.Log($"Загрузка не завершена. Кусков: {downloadManager.CompletedPieces}/{pieceCount}. Прогресс сохранён: {state.FilePath}");
+        logger.Log($"Загрузка не завершена. Кусков: {downloadManager.CompletedPieces}/{selectedPieceCount}. Прогресс сохранён: {state.FilePath}");
 }
 catch (Exception ex)
 {
