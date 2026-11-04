@@ -27,9 +27,9 @@ public sealed class DownloadState
         _pieces = new HashSet<int>(pieces);
     }
 
-    public static DownloadState Load(TorrentInfo torrent)
+    public static DownloadState Load(TorrentInfo torrent, string downloadDir)
     {
-        var path = GetPath(torrent);
+        var path = GetPath(torrent, downloadDir);
         var pieces = Array.Empty<int>();
 
         try
@@ -60,9 +60,9 @@ public sealed class DownloadState
         return new DownloadState(path, torrent, pieces);
     }
 
-    public static string GetPath(TorrentInfo torrent)
+    public static string GetPath(TorrentInfo torrent, string downloadDir)
     {
-        var directory = Path.Combine(Path.GetTempPath(), "SAS-Torrent");
+        var directory = Path.Combine(downloadDir, ".SAS-Torrent");
         var fileName = Convert.ToHexString(torrent.InfoHash).ToLowerInvariant() + ".progress";
         return Path.Combine(directory, fileName);
     }

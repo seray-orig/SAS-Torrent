@@ -75,7 +75,7 @@ try
         cts.Cancel();
     };
 
-    var state = DownloadState.Load(torrent);
+    var state = DownloadState.Load(torrent, downloadDir);
     if (state.Pieces.Count > 0)
         logger.Log($"[Resume] Найден прогресс: {state.Pieces.Count} кусков ({state.FilePath})");
 
