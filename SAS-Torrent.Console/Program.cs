@@ -1,8 +1,9 @@
 ﻿using System.Security.Cryptography;
-using SAS_Torrent.Console.Bencode;
-using SAS_Torrent.Console.IO;
-using SAS_Torrent.Console.Peers;
-using SAS_Torrent.Console.Torrent;
+using SAS_Torrent.Core.Bencode;
+using SAS_Torrent.Core.IO;
+using SAS_Torrent.Core.Logging;
+using SAS_Torrent.Core.Peers;
+using SAS_Torrent.Core.Torrent;
 
 if (args.Length == 0)
 {
@@ -21,16 +22,17 @@ try
     if (root == null) throw new Exception("Неверный торрент-файл");
 
     var torrent = new TorrentInfo(root);
-    Console.WriteLine($"Торрент: {torrent.Name}");
-    Console.WriteLine($"Размер: {torrent.TotalLength} байт");
-    Console.WriteLine($"Кусков: {Math.Ceiling((double)torrent.TotalLength / torrent.PieceLength)}");
+    var pieceCount = (int)Math.Ceiling((double)torrent.TotalLength / torrent.PieceLength);
+
+    var journal = new TorrentJournal(torrent.Name, torrent.TotalLength, pieceCount);
+    var logger = new ConsoleLogger();
+    logger.Log(journal.GetSummary());
 
     var peerId = "-qB4640-" + RandomNumberGenerator.GetInt32(100000000).ToString("D8") + RandomNumberGenerator.GetInt32(10000).ToString("D4");
     var port = 6881;
-    var pieceCount = (int)Math.Ceiling((double)torrent.TotalLength / torrent.PieceLength);
 
-    var peerManager = new PeerManager(torrent.InfoHash, peerId, pieceCount);
-    var discovery = new PeerDiscovery(torrent, peerId, port);
+    var peerManager = new PeerManager(torrent.InfoHash, peerId, pieceCount, logger, journal);
+    var discovery = new PeerDiscovery(torrent, peerId, port, logger);
     using var cts = new CancellationTokenSource();
     Console.CancelKeyPress += (_, e) =>
     {
@@ -40,14 +42,14 @@ try
 
     var state = DownloadState.Load(torrent);
     if (state.Pieces.Count > 0)
-        Console.WriteLine($"[Resume] Найден прогресс: {state.Pieces.Count} кусков ({state.FilePath})");
+        logger.Log($"[Resume] Найден прогресс: {state.Pieces.Count} кусков ({state.FilePath})");
 
-    Console.WriteLine("Параллельный поиск пиров (трекеры и DHT) и подключение...");
+    logger.Log("Параллельный поиск пиров (трекеры и DHT) и подключение...");
     var connectTask = peerManager.ConnectToPeersAsync(discovery.DiscoverAsync(cts.Token), cts.Token);
 
     Directory.CreateDirectory(downloadDir);
     var fileWriter = new FileWriter(torrent, downloadDir);
-    var downloadManager = new DownloadManager(torrent, peerManager, fileWriter, state);
+    var downloadManager = new DownloadManager(torrent, peerManager, fileWriter, state, logger, journal);
 
     var completed = await downloadManager.DownloadAsync(cts.Token);
 
@@ -58,13 +60,28 @@ try
     fileWriter.Close();
     peerManager.DisconnectAll();
 
+    logger.Log(journal.GetSummary());
+
     if (completed)
-        Console.WriteLine("Готово.");
+        logger.Log("Готово.");
     else
-        Console.WriteLine($"Загрузка не завершена. Кусков: {downloadManager.CompletedPieces}/{pieceCount}. Прогресс сохранён: {state.FilePath}");
+        logger.Log($"Загрузка не завершена. Кусков: {downloadManager.CompletedPieces}/{pieceCount}. Прогресс сохранён: {state.FilePath}");
 }
 catch (Exception ex)
 {
     Console.WriteLine($"Ошибка: {ex.Message}");
     Console.WriteLine(ex.StackTrace);
+}
+
+public sealed class ConsoleLogger : ITorrentLogger
+{
+    public void Log(string message)
+    {
+        Console.WriteLine(message);
+    }
+
+    public void LogError(string message)
+    {
+        Console.WriteLine($"Ошибка: {message}");
+    }
 }

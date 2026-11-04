@@ -22,7 +22,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\SAS-Torrent.Console\SAS-Torrent.Console.csproj" />
+    <ProjectReference Include="..\SAS-Torrent.Core\SAS-Torrent.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -1,4 +1,4 @@
-using SAS_Torrent.Console.Bencode;
+using SAS_Torrent.Core.Bencode;
 using System.Text;
 
 namespace SAS_Torrent.UnitTests;

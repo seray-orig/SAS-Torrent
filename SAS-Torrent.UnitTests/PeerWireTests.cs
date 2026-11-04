@@ -1,4 +1,4 @@
-using SAS_Torrent.Console.Peers;
+using SAS_Torrent.Core.Peers;
 
 namespace SAS_Torrent.UnitTests;
 
