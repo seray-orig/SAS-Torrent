@@ -15,7 +15,7 @@
           <TextBlock Text="Торрент:" VerticalAlignment="Center" />
           <TextBox x:Name="TorrentPathBox"
                    Grid.Column="1"
-                   Watermark="Перетащите .torrent сюда или выберите файл"
+                   PlaceholderText="Перетащите .torrent сюда или выберите файл"
                    KeyDown="OnTorrentPathKeyDown"
                    LostFocus="OnTorrentPathLostFocus" />
           <Button Grid.Column="2"
