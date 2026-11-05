@@ -28,7 +28,7 @@ try
     var torrent = new TorrentInfo(root);
 
     if (args.Length > 1)
-        downloadDir = args[1];
+        downloadDir = Path.Combine(args[1], FileWriter.SanitizeName(torrent.Name));
     else
         downloadDir = config.ResolveDownloadDirectory(FileWriter.SanitizeName(torrent.Name));
 

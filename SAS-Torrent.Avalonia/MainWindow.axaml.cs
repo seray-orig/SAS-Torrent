@@ -20,7 +20,6 @@ public partial class MainWindow : Window
     private AppConfig _config = new();
     private TorrentInfo? _torrent;
     private string _lastTorrentPath = string.Empty;
-    private string _lastDownloadFolder = string.Empty;
 
     private TorrentDownload? _download;
     private CancellationTokenSource? _downloadCts;
@@ -36,10 +35,8 @@ public partial class MainWindow : Window
         InitializeComponent();
 
         _config = LoadConfig();
-        var defaultFolder = _config.ResolveDownloadsFolder();
+        DownloadFolderBox.Text = _config.ResolveDownloadsFolder();
 
-        DownloadFolderBox.Text = defaultFolder;
-        _lastDownloadFolder = defaultFolder;
         FilesListBox.ItemsSource = _fileEntries;
         LogListBox.ItemsSource = _logEntries;
 
@@ -86,20 +83,20 @@ public partial class MainWindow : Window
         LoadTorrent(path);
     }
 
-    private async void OnBrowseFolderClick(object? sender, RoutedEventArgs e)
+    private async void OnSettingsClick(object? sender, RoutedEventArgs e)
     {
-        var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
-        {
-            Title = "Выберите папку скачивания",
-            AllowMultiple = false
-        });
+        var dialog = new SettingsWindow(_config);
+        var saved = await dialog.ShowDialog<bool?>(this);
 
-        var path = folders.FirstOrDefault()?.TryGetLocalPath();
-        if (string.IsNullOrWhiteSpace(path))
-            return;
+        if (saved == true)
+            RefreshDownloadFolder();
+    }
 
-        DownloadFolderBox.Text = path;
-        ApplyDownloadFolder();
+    private void RefreshDownloadFolder()
+    {
+        DownloadFolderBox.Text = _config.ResolveDownloadsFolder();
+        _lastRunCompleted = false;
+        UpdateSelectionProgress();
     }
 
     private void OnTorrentPathKeyDown(object? sender, KeyEventArgs e)
@@ -118,31 +115,6 @@ public partial class MainWindow : Window
             return;
 
         LoadTorrent(path);
-    }
-
-    private void OnDownloadFolderKeyDown(object? sender, KeyEventArgs e)
-    {
-        if (e.Key != Key.Enter)
-            return;
-
-        ApplyDownloadFolder();
-        e.Handled = true;
-    }
-
-    private void OnDownloadFolderLostFocus(object? sender, RoutedEventArgs e)
-    {
-        ApplyDownloadFolder();
-    }
-
-    private void ApplyDownloadFolder()
-    {
-        var folder = DownloadFolderBox.Text?.Trim() ?? string.Empty;
-        if (folder == _lastDownloadFolder)
-            return;
-
-        _lastDownloadFolder = folder;
-        _lastRunCompleted = false;
-        UpdateSelectionProgress();
     }
 
     private void LoadTorrent(string path)
@@ -253,50 +225,13 @@ public partial class MainWindow : Window
 
     private string GetEffectiveDownloadDirectory(TorrentInfo torrent)
     {
-        var selected = DownloadFolderBox.Text?.Trim() ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(selected))
-            return selected;
-
-        if (_config.HasCustomDownloadsPath)
-            return selected;
-
-        var defaultFolder = _config.GetDefaultDownloadsFolder();
-        if (!PathsEqual(selected, defaultFolder))
-            return selected;
-
-        return Path.Combine(selected, FileWriter.SanitizeName(torrent.Name));
-    }
-
-    private static bool PathsEqual(string left, string right)
-    {
-        try
-        {
-            var comparison = OperatingSystem.IsWindows()
-                ? StringComparison.OrdinalIgnoreCase
-                : StringComparison.Ordinal;
-
-            return string.Equals(
-                Path.TrimEndingDirectorySeparator(Path.GetFullPath(left)),
-                Path.TrimEndingDirectorySeparator(Path.GetFullPath(right)),
-                comparison);
-        }
-        catch
-        {
-            return string.Equals(left.Trim(), right.Trim(), StringComparison.OrdinalIgnoreCase);
-        }
+        return _config.ResolveDownloadDirectory(FileWriter.SanitizeName(torrent.Name));
     }
 
     private async void OnDownloadClick(object? sender, RoutedEventArgs e)
     {
         if (_isDownloading || _torrent == null)
             return;
-
-        var folder = DownloadFolderBox.Text?.Trim() ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(folder))
-        {
-            SetStatus("Укажите папку скачивания.");
-            return;
-        }
 
         var total = TorrentSelection.CountSelectedPieces(_torrent, _torrent.Files);
         if (total == 0)

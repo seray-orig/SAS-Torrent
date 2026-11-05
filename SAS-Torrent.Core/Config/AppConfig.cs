@@ -7,10 +7,7 @@ public sealed class AppConfig
 {
     private const string ConfigFileName = "appsettings.json";
     private const string AppDirectoryName = "SAS-Torrent";
-    private const string DefaultDownloadsFolderName = "downloads";
-
-    [JsonPropertyName("downloadsFolderName")]
-    public string? DownloadsFolderName { get; set; } = DefaultDownloadsFolderName;
+    private const string DefaultDownloadsFolderName = "SAS-downloads";
 
     [JsonPropertyName("customDownloadsFolderPath")]
     public string? CustomDownloadsFolderPath { get; set; }
@@ -59,11 +56,26 @@ public sealed class AppConfig
 
     public static AppConfig EnsureCreated(string? baseDirectory = null)
     {
-        var config = Load(baseDirectory);
         var path = GetConfigPath(baseDirectory);
 
         if (!File.Exists(path))
-            Save(config, baseDirectory);
+        {
+            var created = new AppConfig();
+            Save(created, baseDirectory);
+            return created;
+        }
+
+        var config = Load(baseDirectory);
+
+        try
+        {
+            var json = File.ReadAllText(path);
+            if (json.Contains("\"downloadsFolderName\"", StringComparison.Ordinal))
+                Save(config, baseDirectory);
+        }
+        catch
+        {
+        }
 
         return config;
     }
@@ -81,12 +93,9 @@ public sealed class AppConfig
 
     public string GetDefaultDownloadsFolder(string? baseDirectory = null)
     {
-        var name = string.IsNullOrWhiteSpace(DownloadsFolderName)
-            ? DefaultDownloadsFolderName
-            : DownloadsFolderName.Trim();
         var dir = baseDirectory ?? AppContext.BaseDirectory;
 
-        return Path.Combine(dir, name);
+        return Path.Combine(dir, DefaultDownloadsFolderName);
     }
 
     public string ResolveDownloadsFolder(string? baseDirectory = null)
@@ -104,10 +113,7 @@ public sealed class AppConfig
 
     public string ResolveDownloadDirectory(string torrentFolderName, string? baseDirectory = null)
     {
-        if (HasCustomDownloadsPath)
-            return ResolveDownloadsFolder(baseDirectory);
-
-        return Path.Combine(GetDefaultDownloadsFolder(baseDirectory), torrentFolderName);
+        return Path.Combine(ResolveDownloadsFolder(baseDirectory), torrentFolderName);
     }
 }
 
