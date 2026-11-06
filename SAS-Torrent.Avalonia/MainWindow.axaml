@@ -4,189 +4,187 @@
         x:Class="SAS_Torrent.Avalonia.MainWindow"
         x:CompileBindings="True"
         Title="SAS Torrent"
-        Width="700"
-        Height="500"
-        MinWidth="400"
-        MinHeight="250">
-  <Grid Margin="12" RowDefinitions="Auto,*" RowSpacing="8">
-    <Button x:Name="SettingsButton"
-            Grid.Row="0"
-            Content="⚙ Настройки"
-            HorizontalAlignment="Right"
-            Padding="10,4"
-            Click="OnSettingsClick" />
+        Width="780"
+        Height="580"
+        MinWidth="580"
+        MinHeight="440">
 
-    <Grid Grid.Row="1">
-      <Grid x:Name="SelectionView" RowDefinitions="Auto,Auto,*,Auto" RowSpacing="8">
-        <StackPanel Grid.Row="0" Spacing="6">
-          <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="6">
-            <TextBlock Text="Торрент:" VerticalAlignment="Center" />
-            <TextBox x:Name="TorrentPathBox"
-                     Grid.Column="1"
-                     PlaceholderText="Перетащите .torrent сюда или выберите файл"
-                     KeyDown="OnTorrentPathKeyDown"
-                     LostFocus="OnTorrentPathLostFocus" />
-            <Button Grid.Column="2"
-                    Content="Обзор..."
-                    Padding="10,4"
-                    Click="OnBrowseTorrentClick" />
-          </Grid>
-  
-          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6">
-            <TextBlock Text="Папка:" VerticalAlignment="Center" />
-            <TextBox x:Name="DownloadFolderBox"
-                     Grid.Column="1"
-                     IsReadOnly="True"
-                     ToolTip.Tip="Изменить папку можно в настройках" />
+  <Grid RowDefinitions="Auto,*,Auto" Margin="14">
+    <StackPanel Grid.Row="0" Spacing="10" Margin="0,0,0,10">
+      <Grid ColumnDefinitions="*,Auto">
+        <TextBlock Classes="win10-instruction" 
+                   Text="Очередь загрузок" 
+                   VerticalAlignment="Center" />
+        <Button Grid.Column="1" 
+                Classes="btn-blue"
+                Content="+ Добавить в очередь" 
+                Click="OnAddTorrentClick" />
+      </Grid>
+      
+      <Border Classes="win10-box" Padding="10">
+        <StackPanel Spacing="6">
+          <TextBlock Text="Общая папка сохранения:" Classes="win10-subtext" FontWeight="SemiBold" />
+          <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+            <TextBox x:Name="DownloadFolderBox" 
+                     Grid.Column="0" 
+                     IsReadOnly="True" 
+                     Background="#F5F5F5" />
+            <Button Grid.Column="1" 
+                    Content="Обзор..." 
+                    Click="OnBrowseFolderClick" />
+            <Button Grid.Column="2" 
+                    Content="Сбросить" 
+                    Click="OnResetFolderClick" />
           </Grid>
         </StackPanel>
-  
-        <Border Grid.Row="1"
-                Background="#12000000"
-                CornerRadius="6"
-                Padding="8,6">
-          <StackPanel Spacing="2">
-            <TextBlock x:Name="TorrentNameText"
-                       Text="Торрент не выбран"
-                       FontWeight="SemiBold"
-                       TextTrimming="CharacterEllipsis" />
-            <StackPanel Orientation="Horizontal" Spacing="16">
-              <TextBlock x:Name="TorrentSizeText" Opacity="0.8" />
-              <TextBlock x:Name="TorrentFilesText" Opacity="0.8" />
-            </StackPanel>
-          </StackPanel>
-        </Border>
-  
-        <Border Grid.Row="2"
-                BorderBrush="#33808080"
-                BorderThickness="1"
-                CornerRadius="6"
-                ClipToBounds="True">
-          <ListBox x:Name="FilesListBox"
-                   Background="Transparent"
-                   BorderThickness="0"
-                   Padding="2">
-            <ListBox.Styles>
-              <Style Selector="ListBoxItem">
-                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                <Setter Property="Padding" Value="4,2" />
-              </Style>
-            </ListBox.Styles>
-            <ListBox.ItemTemplate>
-              <DataTemplate x:DataType="local:FileEntry">
-                <Grid ColumnDefinitions="Auto,*,Auto">
-                  <CheckBox Grid.Column="0"
-                            IsChecked="{Binding IsSelected, Mode=TwoWay}"
-                            VerticalAlignment="Center" />
-                  <TextBlock Grid.Column="1"
-                             Text="{Binding RelativePath}"
-                             TextTrimming="CharacterEllipsis"
-                             VerticalAlignment="Center"
-                             Margin="4,0,0,0" />
-                  <TextBlock Grid.Column="2"
-                             Text="{Binding SizeText}"
-                             Opacity="0.6"
-                             VerticalAlignment="Center"
-                             Margin="8,0,4,0" />
-                </Grid>
+      </Border>
+    </StackPanel>
+
+    <Border Grid.Row="1" Classes="win10-box" Padding="0">
+      <Grid>
+        <StackPanel x:Name="EmptyQueuePlaceholder"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Spacing="4"
+                    IsHitTestVisible="False">
+          <TextBlock Text="Drag and Drop"
+                     FontSize="22"
+                     FontWeight="SemiBold"
+                     Foreground="#8A8A8A"
+                     HorizontalAlignment="Center" />
+          <TextBlock Text="Перетащи сюда"
+                     FontSize="14"
+                     Foreground="#9E9E9E"
+                     HorizontalAlignment="Center" />
+        </StackPanel>
+
+        <ScrollViewer HorizontalScrollBarVisibility="Disabled"
+                      VerticalScrollBarVisibility="Auto"
+                      Padding="6,6,10,6">
+          <ItemsControl x:Name="TorrentsListBox">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <StackPanel Spacing="6" />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="local:TorrentQueueItem">
+                <Expander IsExpanded="{Binding IsExpanded, Mode=TwoWay}"
+                          HorizontalAlignment="Stretch"
+                          Padding="0">
+                  <Expander.Header>
+                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10" Margin="4,6,8,6">
+                      <Grid Grid.Column="0" RowDefinitions="Auto,Auto,Auto" RowSpacing="5" Margin="0,0,6,0">
+                        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                          <StackPanel Grid.Column="0" Spacing="2">
+                            <TextBlock Text="{Binding Name}" 
+                                       FontWeight="SemiBold" 
+                                       TextTrimming="CharacterEllipsis" 
+                                       ToolTip.Tip="{Binding Name}" />
+                            <StackPanel Orientation="Horizontal" Spacing="12">
+                              <TextBlock Text="{Binding SizeText}" FontSize="11" Foreground="#555555" />
+                              <TextBlock Text="{Binding TotalPiecesText}" FontSize="11" Foreground="#555555" />
+                            </StackPanel>
+                          </StackPanel>
+
+                          <StackPanel Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Right" Spacing="2">
+                            <TextBlock Text="{Binding SelectedFilesText}" 
+                                       FontSize="11" 
+                                       Foreground="#222222" 
+                                       HorizontalAlignment="Right" />
+                            <TextBlock Text="{Binding Status}" 
+                                       IsVisible="{Binding HasStatus}"
+                                       FontSize="11" 
+                                       Foreground="#003399" 
+                                       HorizontalAlignment="Right" />
+                          </StackPanel>
+                        </Grid>
+
+                        <ProgressBar Grid.Row="1" 
+                                     Minimum="0" 
+                                     Maximum="{Binding ProgressMax}" 
+                                     Value="{Binding ProgressValue}" 
+                                     HorizontalAlignment="Stretch" />
+
+                        <Grid Grid.Row="2" ColumnDefinitions="*,Auto">
+                          <TextBlock Grid.Column="0"
+                                     Text="{Binding SpeedText}"
+                                     FontSize="11"
+                                     Foreground="#444444" />
+                          <TextBlock Grid.Column="1"
+                                     Text="{Binding EtaText}"
+                                     FontSize="11"
+                                     Foreground="#444444" />
+                        </Grid>
+                      </Grid>
+
+                      <Button Grid.Column="1" 
+                              Content="{Binding ButtonText}" 
+                              Command="{Binding ToggleDownloadCommand}" 
+                              Width="96"
+                              Height="26"
+                              VerticalAlignment="Center" />
+
+                      <Button Grid.Column="2"
+                              Classes="close-btn"
+                              Content="X"
+                              Command="{Binding RemoveCommand}"
+                              VerticalAlignment="Center"
+                              ToolTip.Tip="Удалить из очереди" />
+                    </Grid>
+                  </Expander.Header>
+                  
+                  <Border Background="#FAFAFA"
+                          BorderBrush="#EEEEEE"
+                          BorderThickness="0,1,0,0"
+                          Padding="6,4,14,4">
+                    <ScrollViewer MaxHeight="200"
+                                  HorizontalScrollBarVisibility="Disabled"
+                                  VerticalScrollBarVisibility="Auto">
+                      <ItemsControl ItemsSource="{Binding Files}">
+                        <ItemsControl.ItemsPanel>
+                          <ItemsPanelTemplate>
+                            <StackPanel Spacing="2" />
+                          </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate x:DataType="local:FileEntry">
+                            <Grid ColumnDefinitions="Auto,*,Auto" Margin="4,3,8,3">
+                              <CheckBox Grid.Column="0" IsChecked="{Binding IsSelected, Mode=TwoWay}" VerticalAlignment="Center" />
+                              <TextBlock Grid.Column="1" 
+                                         Text="{Binding RelativePath}" 
+                                         TextTrimming="CharacterEllipsis" 
+                                         ToolTip.Tip="{Binding RelativePath}" 
+                                         VerticalAlignment="Center" 
+                                         Margin="8,0" />
+                              <TextBlock Grid.Column="2" 
+                                         Text="{Binding SizeText}" 
+                                         Foreground="#555555" 
+                                         VerticalAlignment="Center" 
+                                         Margin="8,0,6,0" />
+                            </Grid>
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+                    </ScrollViewer>
+                  </Border>
+                </Expander>
               </DataTemplate>
-            </ListBox.ItemTemplate>
-          </ListBox>
-        </Border>
-  
-        <StackPanel Grid.Row="3" Spacing="3">
-          <Button x:Name="DownloadButton"
-                  Content="Download"
-                  Width="120"
-                  HorizontalAlignment="Center"
-                  HorizontalContentAlignment="Center"
-                  IsEnabled="False"
-                  Click="OnDownloadClick" />
-          <TextBlock x:Name="SelectionProgressText"
-                     Text="0 / 0"
-                     HorizontalAlignment="Center"
-                     FontSize="13"
-                     Opacity="0.85" />
-          <TextBlock x:Name="StatusText"
-                     HorizontalAlignment="Center"
-                     FontSize="11"
-                     Foreground="#D9534F"
-                     TextWrapping="Wrap"
-                     MaxLines="2" />
-        </StackPanel>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
       </Grid>
-  
-      <Grid x:Name="DownloadView"
-            IsVisible="False"
-            RowDefinitions="*,Auto,Auto,Auto,Auto,*"
-            RowSpacing="8">
-        <TextBlock x:Name="DownloadTorrentNameText"
-                   Grid.Row="1"
-                   HorizontalAlignment="Center"
-                   TextTrimming="CharacterEllipsis"
-                   MaxWidth="460" />
-        <TextBlock x:Name="DownloadProgressText"
-                   Grid.Row="2"
-                   Text="0 / 0"
-                   HorizontalAlignment="Center"
-                   FontSize="26"
-                   FontWeight="SemiBold" />
-        <ProgressBar x:Name="DownloadProgressBar"
-                     Grid.Row="3"
-                     Height="16"
-                     Margin="40,0"
-                     Minimum="0"
-                     Maximum="1"
-                     Value="0" />
-        <StackPanel Grid.Row="4" Spacing="4">
-          <Button x:Name="StopButton"
-                  Content="Stop"
-                  Width="120"
-                  HorizontalAlignment="Center"
-                  HorizontalContentAlignment="Center"
-                  Click="OnStopClick" />
-          <TextBlock x:Name="DownloadStatusText"
-                     HorizontalAlignment="Center"
-                     FontSize="11"
-                     Opacity="0.7"
-                     TextWrapping="Wrap"
-                     MaxLines="2" />
-        </StackPanel>
-  
-        <Expander x:Name="LogExpander"
-                  Grid.Row="5"
-                  Header="Логи"
-                  IsExpanded="False"
-                  VerticalAlignment="Bottom"
-                  HorizontalAlignment="Stretch">
-          <Border BorderBrush="#33808080"
-                  BorderThickness="1"
-                  CornerRadius="4"
-                  Margin="0,4,0,0"
-                  ClipToBounds="True">
-            <ListBox x:Name="LogListBox"
-                     Background="Transparent"
-                     BorderThickness="0"
-                     Padding="2"
-                     MinHeight="80"
-                     MaxHeight="160"
-                     FontFamily="Consolas,Menlo,monospace"
-                     FontSize="11">
-              <ListBox.Styles>
-                <Style Selector="ListBoxItem">
-                  <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                  <Setter Property="Padding" Value="4,1" />
-                </Style>
-              </ListBox.Styles>
-              <ListBox.ItemTemplate>
-                <DataTemplate>
-                  <TextBlock Text="{Binding}" TextWrapping="Wrap" />
-                </DataTemplate>
-              </ListBox.ItemTemplate>
-            </ListBox>
-          </Border>
-        </Expander>
+    </Border>
+
+    <Border Grid.Row="2" Classes="win10-footer" Margin="-14,14,-14,-14">
+      <Grid ColumnDefinitions="*,Auto">
+        <TextBlock x:Name="GlobalStatusText" Grid.Column="0" VerticalAlignment="Center" Foreground="#003399" />
+        <Button x:Name="GlobalActionButton"
+                Grid.Column="1" 
+                Classes="btn-green"
+                Content="Начать все" 
+                Click="OnGlobalActionClick" />
       </Grid>
-    </Grid>
+    </Border>
   </Grid>
 </Window>

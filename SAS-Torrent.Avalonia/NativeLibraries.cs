@@ -7,13 +7,19 @@ namespace SAS_Torrent.Avalonia;
 internal static class NativeLibraries
 {
     private const string ResourcePrefix = "SAS_Torrent.Avalonia.Native.";
+    
+    private static readonly string[] LoadOrder = GetLoadOrder();
 
-    private static readonly string[] LoadOrder =
+    private static string[] GetLoadOrder()
     {
-        "libHarfBuzzSharp.dll",
-        "libSkiaSharp.dll",
-        "av_libglesv2.dll"
-    };
+        if (OperatingSystem.IsWindows())
+            return new[] { "libHarfBuzzSharp.dll", "libSkiaSharp.dll", "av_libglesv2.dll" };
+            
+        if (OperatingSystem.IsMacOS())
+            return new[] { "libHarfBuzzSharp.dylib", "libSkiaSharp.dylib", "libAvaloniaNative.dylib" };
+            
+        return new[] { "libHarfBuzzSharp.so", "libSkiaSharp.so", "libAvaloniaNative.so" };
+    }
 
     public static void EnsureLoaded()
     {
@@ -38,8 +44,8 @@ internal static class NativeLibraries
             using var memory = new MemoryStream();
             stream.CopyTo(memory);
             var data = memory.ToArray();
-
             hash.AppendData(data);
+            
             payloads.Add((resource[ResourcePrefix.Length..], data));
         }
 

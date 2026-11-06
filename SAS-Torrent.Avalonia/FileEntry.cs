@@ -8,14 +8,15 @@ public sealed class FileEntry : INotifyPropertyChanged
 {
     private readonly TorrentFile _file;
 
-    public FileEntry(TorrentFile file)
+    public FileEntry(TorrentFile file, int pieceCount)
     {
         _file = file;
+        PieceCount = pieceCount;
     }
 
     public string RelativePath => _file.RelativePath;
-
-    public string SizeText => SizeFormatter.Format(_file.Length);
+    public int PieceCount { get; }
+    public string SizeText => $"{SizeFormatter.Format(_file.Length)} ({PieceCount} кус.)";
 
     public bool IsSelected
     {

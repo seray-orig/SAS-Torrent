@@ -1,14 +1,16 @@
 <Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
-    <OutputType>WinExe</OutputType>
+    <OutputType Condition="$([MSBuild]::IsOSPlatform('Windows'))">WinExe</OutputType>
+    <OutputType Condition="!$([MSBuild]::IsOSPlatform('Windows'))">Exe</OutputType>
+    
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>SAS_Torrent.Avalonia</RootNamespace>
-    <AssemblyName>SAS-Torrent.Avalonia</AssemblyName>
+    <AssemblyName>SAS-Torrent</AssemblyName>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    
     <PublishAot>true</PublishAot>
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>
@@ -21,8 +23,13 @@
     <AllowedReferenceRelatedFileExtensions>.xml;.nuspec</AllowedReferenceRelatedFileExtensions>
     <StripSymbols>true</StripSymbols>
     <InvariantGlobalization>true</InvariantGlobalization>
-    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
     <JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
+    
+    <BuiltInComInteropSupport Condition="$([MSBuild]::IsOSPlatform('Windows'))">true</BuiltInComInteropSupport>
+    <BuiltInComInteropSupport Condition="!$([MSBuild]::IsOSPlatform('Windows'))">false</BuiltInComInteropSupport>
+    <Authors>seray, ognov games</Authors>
+    <RepositoryUrl>https://github.com/seray-orig/SAS-Torrent</RepositoryUrl>
+    <RepositoryType>github</RepositoryType>
   </PropertyGroup>
 
   <ItemGroup>
@@ -35,24 +42,18 @@
     <ProjectReference Include="..\SAS-Torrent.Core\SAS-Torrent.Core.csproj" />
   </ItemGroup>
 
-  <Target Name="EmbedNativeLibraries"
-          AfterTargets="ResolvePackageAssets"
-          BeforeTargets="PrepareResourceNames">
+  <Target Name="EmbedNativeLibraries" AfterTargets="ResolvePackageAssets" BeforeTargets="PrepareResourceNames">
     <ItemGroup>
-      <EmbeddedResource Include="@(NativeCopyLocalItems)"
-                        Condition="'%(NativeCopyLocalItems.Extension)' == '.dll'">
+      <EmbeddedResource Include="@(NativeCopyLocalItems)" Condition="'%(NativeCopyLocalItems.Extension)' == '.dll' or '%(NativeCopyLocalItems.Extension)' == '.so' or '%(NativeCopyLocalItems.Extension)' == '.dylib'">
         <LogicalName>SAS_Torrent.Avalonia.Native.%(NativeCopyLocalItems.DestinationSubPath)</LogicalName>
       </EmbeddedResource>
       <NativeCopyLocalItems Remove="@(NativeCopyLocalItems)" />
     </ItemGroup>
   </Target>
 
-  <Target Name="RemoveEmbeddedNativeLibrariesFromPublish"
-          AfterTargets="ComputeResolvedFilesToPublishList">
+  <Target Name="RemoveEmbeddedNativeLibrariesFromPublish" AfterTargets="ComputeResolvedFilesToPublishList">
     <ItemGroup>
-      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
-                             Condition="'%(ResolvedFileToPublish.AssetType)' == 'native' and '%(ResolvedFileToPublish.Extension)' == '.dll'" />
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(ResolvedFileToPublish.AssetType)' == 'native' and ('%(ResolvedFileToPublish.Extension)' == '.dll' or '%(ResolvedFileToPublish.Extension)' == '.so' or '%(ResolvedFileToPublish.Extension)' == '.dylib')" />
     </ItemGroup>
   </Target>
-
 </Project>
