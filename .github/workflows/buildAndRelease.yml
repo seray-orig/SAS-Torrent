@@ -54,16 +54,9 @@ jobs:
           CLEAN_VER="${RAW_VER#dev}"
           dotnet publish SAS-Torrent.Avalonia/SAS-Torrent.Avalonia.csproj -c Release -p:Version="$CLEAN_VER" -o ./${{ matrix.rid }} -r ${{ matrix.rid }}
 
-      - name: Переименовываем артефакт Windows
-        if: matrix.os == 'windows-latest'
-        run: mv ./${{ matrix.rid }}/* ./${{ matrix.rid }}/SAS-Torrent.exe
-
       - name: Упаковка в архив (Linux/macOS)
         if: matrix.os != 'windows-latest'
-        shell: bash
-        run: |
-          tar -czvf "${{ matrix.rid }}/SAS-Torrent_${{ matrix.rid }}.tar.gz" "${{ matrix.rid }}/SAS-Torrent_${{ matrix.rid }}"
-          rm -f SAS-Torrent_${{ matrix.rid }}
+        run: mv "SAS-Torrent" "SAS-Torrent_${{ matrix.rid }}"
 
       - name: Сохраняем артефакт
         uses: actions/upload-artifact@v4
