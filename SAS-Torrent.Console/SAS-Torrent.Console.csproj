@@ -13,4 +13,8 @@
     <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\SAS-Torrent.Core\SAS-Torrent.Core.csproj" />
+  </ItemGroup>
+
 </Project>

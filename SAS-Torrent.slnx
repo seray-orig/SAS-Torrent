@@ -1,4 +1,6 @@
 <Solution>
+  <Project Path="SAS-Torrent.Core/SAS-Torrent.Core.csproj" />
+  <Project Path="SAS-Torrent.Avalonia/SAS-Torrent.Avalonia.csproj" />
   <Project Path="SAS-Torrent.Console/SAS-Torrent.Console.csproj" />
-  <Project Path="SAS-Torrent.UnitTests/SAS-Torrent.UnitTests.csproj" Id="7ff325c3-9dc3-4b72-816f-dea30f39eac8" />
+  <Project Path="SAS-Torrent.UnitTests/SAS-Torrent.UnitTests.csproj" Id="7ff325c3-9dc3-4b77-816f-dea30f39eac8" />
 </Solution>
