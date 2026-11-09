@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -5,6 +6,18 @@ namespace SAS_Torrent.Core.Config;
 
 public sealed class AppConfig
 {
+    public const string DefaultUserAgent = "qBittorrent/4.6.4";
+    public const string DefaultPeerIdPrefix = "-qB4640-";
+
+    public static readonly string[] DefaultDhtBootstrapHosts =
+    {
+        "dht.transmissionbt.com",
+        "router.bittorrent.com",
+        "router.utorrent.com",
+        "dht.aelitis.com",
+        "dht.libtorrent.org"
+    };
+
     private const string ConfigFileName = "appsettings.json";
     private const string AppDirectoryName = "SAS-Torrent";
     private const string DefaultDownloadsFolderName = "SAS-downloads";
@@ -12,8 +25,73 @@ public sealed class AppConfig
     [JsonPropertyName("customDownloadsFolderPath")]
     public string? CustomDownloadsFolderPath { get; set; }
 
+    [JsonPropertyName("userAgent")]
+    public string UserAgent { get; set; } = DefaultUserAgent;
+
+    [JsonPropertyName("peerIdPrefix")]
+    public string PeerIdPrefix { get; set; } = DefaultPeerIdPrefix;
+
+    [JsonPropertyName("dhtBootstrapHosts")]
+    public List<string> DhtBootstrapHosts { get; set; } = DefaultDhtBootstrapHosts.ToList();
+
     [JsonIgnore]
     public bool HasCustomDownloadsPath => !string.IsNullOrWhiteSpace(CustomDownloadsFolderPath);
+
+    [JsonIgnore]
+    public string ResolvedUserAgent =>
+        string.IsNullOrWhiteSpace(UserAgent) ? DefaultUserAgent : UserAgent.Trim();
+
+    [JsonIgnore]
+    public string ResolvedPeerIdPrefix =>
+        IsValidPeerIdPrefix(PeerIdPrefix) ? PeerIdPrefix : DefaultPeerIdPrefix;
+
+    [JsonIgnore]
+    public IReadOnlyList<string> ResolvedDhtBootstrapHosts
+    {
+        get
+        {
+            var hosts = (DhtBootstrapHosts ?? new List<string>())
+                .Where(host => !string.IsNullOrWhiteSpace(host))
+                .Select(host => host.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            return hosts.Count > 0 ? hosts : DefaultDhtBootstrapHosts;
+        }
+    }
+
+    public string CreatePeerId()
+    {
+        return ResolvedPeerIdPrefix
+            + RandomNumberGenerator.GetInt32(100000000).ToString("D8")
+            + RandomNumberGenerator.GetInt32(10000).ToString("D4");
+    }
+
+    public void SetClientIdentity(string userAgent, string peerIdPrefix, string? baseDirectory = null)
+    {
+        if (string.IsNullOrWhiteSpace(userAgent))
+            throw new ArgumentException("User-Agent не может быть пустым.", nameof(userAgent));
+
+        if (userAgent.Any(character => character is '\r' or '\n'))
+            throw new ArgumentException("User-Agent не может содержать перевод строки.", nameof(userAgent));
+
+        if (!IsValidPeerIdPrefix(peerIdPrefix))
+            throw new ArgumentException(
+                "Peer ID prefix должен состоять из 8 печатных ASCII-символов, например -qB4640-.",
+                nameof(peerIdPrefix));
+
+        UserAgent = userAgent.Trim();
+        PeerIdPrefix = peerIdPrefix;
+        Save(this, baseDirectory);
+    }
+
+    public static bool IsValidPeerIdPrefix(string? prefix)
+    {
+        if (prefix is null || prefix.Length != 8)
+            return false;
+
+        return prefix.All(character => character is >= ' ' and <= '~');
+    }
 
     public static string GetAppDataDirectory()
     {
@@ -70,7 +148,10 @@ public sealed class AppConfig
         try
         {
             var json = File.ReadAllText(path);
-            if (json.Contains("\"downloadsFolderName\"", StringComparison.Ordinal))
+            if (json.Contains("\"downloadsFolderName\"", StringComparison.Ordinal) ||
+                !json.Contains("\"userAgent\"", StringComparison.Ordinal) ||
+                !json.Contains("\"peerIdPrefix\"", StringComparison.Ordinal) ||
+                !json.Contains("\"dhtBootstrapHosts\"", StringComparison.Ordinal))
                 Save(config, baseDirectory);
         }
         catch

@@ -65,6 +65,7 @@ public partial class MainWindow : Window
             var item = new TorrentQueueItem(
                 torrent, 
                 () => _config.ResolveDownloadDirectory(FileWriter.SanitizeName(torrent.Name)),
+                _config,
                 RemoveTorrentFromQueue
             );
             

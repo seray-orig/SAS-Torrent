@@ -1,4 +1,4 @@
-using System.Security.Cryptography;
+using SAS_Torrent.Core.Config;
 using SAS_Torrent.Core.IO;
 using SAS_Torrent.Core.Logging;
 using SAS_Torrent.Core.Peers;
@@ -10,6 +10,7 @@ public sealed class TorrentDownload
 {
     private readonly TorrentInfo _torrent;
     private readonly string _downloadDir;
+    private readonly AppConfig _config;
     private readonly ITorrentLogger? _logger;
 
     private FileWriter? _fileWriter;
@@ -21,10 +22,11 @@ public sealed class TorrentDownload
     private Task? _connectTask;
     private CancellationTokenSource? _cts;
 
-    public TorrentDownload(TorrentInfo torrent, string downloadDir, ITorrentLogger? logger = null)
+    public TorrentDownload(TorrentInfo torrent, string downloadDir, AppConfig config, ITorrentLogger? logger = null)
     {
         _torrent = torrent;
         _downloadDir = downloadDir;
+        _config = config;
         _logger = logger;
     }
 
@@ -55,16 +57,20 @@ public sealed class TorrentDownload
             TotalPieces = _fileWriter.SelectedPieceCount;
 
             var journal = new TorrentJournal(_torrent.Name, _torrent.TotalLength, TotalPieces);
-            var peerId = "-qB4640-" +
-                         RandomNumberGenerator.GetInt32(100000000).ToString("D8") +
-                         RandomNumberGenerator.GetInt32(10000).ToString("D4");
+            var peerId = _config.CreatePeerId();
             _inboundListener = PeerInboundListener.Start(6881, _torrent.InfoHash, peerId, _logger);
             var port = _inboundListener.Port;
 
             var peerManager = new PeerManager(_torrent.InfoHash, peerId, pieceCount, _logger, journal);
             _peerManager = peerManager;
 
-            var discovery = new PeerDiscovery(_torrent, peerId, port, _logger);
+            var discovery = new PeerDiscovery(
+                _torrent,
+                peerId,
+                port,
+                _config.ResolvedUserAgent,
+                _config.ResolvedDhtBootstrapHosts,
+                _logger);
             _discovery = discovery;
             _state = DownloadState.Load(_torrent, _downloadDir);
             _manager = new DownloadManager(_torrent, peerManager, _fileWriter, _state, _logger, journal);

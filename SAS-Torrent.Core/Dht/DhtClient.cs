@@ -20,25 +20,18 @@ public sealed class DhtClient
     private static readonly TimeSpan QueryTimeout = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan LookupTimeout = TimeSpan.FromSeconds(25);
 
-    private static readonly string[] BootstrapHosts =
-    {
-        "dht.transmissionbt.com",
-        "router.bittorrent.com",
-        "router.utorrent.com",
-        "dht.aelitis.com",
-        "dht.libtorrent.org"
-    };
-
     private readonly byte[] _infoHash;
     private readonly byte[] _nodeId;
+    private readonly IReadOnlyList<string> _bootstrapHosts;
     private readonly ConcurrentDictionary<int, TaskCompletionSource<BencodeDictionary?>> _transactions = new();
     private int _nextTransaction;
     private readonly ITorrentLogger? _logger;
 
-    public DhtClient(byte[] infoHash, ITorrentLogger? logger = null)
+    public DhtClient(byte[] infoHash, IReadOnlyList<string> bootstrapHosts, ITorrentLogger? logger = null)
     {
         _infoHash = infoHash;
         _nodeId = RandomId();
+        _bootstrapHosts = bootstrapHosts;
         _logger = logger;
     }
 
@@ -260,9 +253,9 @@ public sealed class DhtClient
         }
     }
 
-    private static async Task<List<IPEndPoint>> ResolveBootstrapAsync(CancellationToken ct)
+    private async Task<List<IPEndPoint>> ResolveBootstrapAsync(CancellationToken ct)
     {
-        var tasks = BootstrapHosts.Select(async host =>
+        var tasks = _bootstrapHosts.Select(async host =>
         {
             try
             {

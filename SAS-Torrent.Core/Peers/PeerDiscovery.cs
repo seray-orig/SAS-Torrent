@@ -11,13 +11,23 @@ public sealed class PeerDiscovery
     private readonly TorrentInfo _torrent;
     private readonly string _peerId;
     private readonly int _port;
+    private readonly string _userAgent;
+    private readonly IReadOnlyList<string> _dhtBootstrapHosts;
     private readonly ITorrentLogger? _logger;
 
-    public PeerDiscovery(TorrentInfo torrent, string peerId, int port, ITorrentLogger? logger = null)
+    public PeerDiscovery(
+        TorrentInfo torrent,
+        string peerId,
+        int port,
+        string userAgent,
+        IReadOnlyList<string> dhtBootstrapHosts,
+        ITorrentLogger? logger = null)
     {
         _torrent = torrent;
         _peerId = peerId;
         _port = port;
+        _userAgent = userAgent;
+        _dhtBootstrapHosts = dhtBootstrapHosts;
         _logger = logger;
     }
 
@@ -79,7 +89,7 @@ public sealed class PeerDiscovery
         {
             try
             {
-                await foreach (var peer in new DhtClient(_torrent.InfoHash, _logger).FindPeersAsync(ct))
+                await foreach (var peer in new DhtClient(_torrent.InfoHash, _dhtBootstrapHosts, _logger).FindPeersAsync(ct))
                     await EmitAsync(new[] { peer });
             }
             catch (OperationCanceledException) { }
@@ -134,7 +144,7 @@ public sealed class PeerDiscovery
 
         if (uri.Scheme == "http" || uri.Scheme == "https")
         {
-            var httpClient = new TrackerClient(_torrent, _peerId, _port, trackerUrl);
+            var httpClient = new TrackerClient(_torrent, _peerId, _port, _userAgent, trackerUrl);
             return stopped
                 ? await httpClient.AnnounceAsync("stopped", ct)
                 : await httpClient.AnnounceAsync(ct);

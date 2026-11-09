@@ -1,5 +1,4 @@
-﻿using System.Security.Cryptography;
-using SAS_Torrent.Core.Bencode;
+﻿using SAS_Torrent.Core.Bencode;
 using SAS_Torrent.Core.Config;
 using SAS_Torrent.Core.IO;
 using SAS_Torrent.Core.Logging;
@@ -73,12 +72,18 @@ try
     var logger = new ConsoleLogger();
     logger.Log(journal.GetSummary());
 
-    var peerId = "-qB4640-" + RandomNumberGenerator.GetInt32(100000000).ToString("D8") + RandomNumberGenerator.GetInt32(10000).ToString("D4");
+    var peerId = config.CreatePeerId();
     using var inboundListener = PeerInboundListener.Start(6881, torrent.InfoHash, peerId, logger);
     var port = inboundListener.Port;
 
     var peerManager = new PeerManager(torrent.InfoHash, peerId, pieceCount, logger, journal);
-    var discovery = new PeerDiscovery(torrent, peerId, port, logger);
+    var discovery = new PeerDiscovery(
+        torrent,
+        peerId,
+        port,
+        config.ResolvedUserAgent,
+        config.ResolvedDhtBootstrapHosts,
+        logger);
     using var cts = new CancellationTokenSource();
     Console.CancelKeyPress += (_, e) =>
     {

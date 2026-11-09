@@ -7,6 +7,7 @@ using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Threading;
+using SAS_Torrent.Core.Config;
 using SAS_Torrent.Core.Torrent;
 
 namespace SAS_Torrent.Avalonia;
@@ -37,6 +38,7 @@ public sealed class TorrentQueueItem : INotifyPropertyChanged
     private int _progressValue;
     private int _progressMax = 1;
     private readonly Func<string> _getDownloadDirectory;
+    private readonly AppConfig _config;
 
     public TorrentInfo Torrent { get; }
     public string InfoHashHex { get; }
@@ -122,11 +124,13 @@ public sealed class TorrentQueueItem : INotifyPropertyChanged
     public TorrentQueueItem(
         TorrentInfo torrent,
         Func<string> getDownloadDirectory,
+        AppConfig config,
         Action<TorrentQueueItem> onRemove)
     {
         Torrent = torrent;
         InfoHashHex = Convert.ToHexString(torrent.InfoHash);
         _getDownloadDirectory = getDownloadDirectory;
+        _config = config;
 
         var totalPieces = TorrentSelection.GetPieceCount(torrent);
         TotalPiecesText = $"Кусков: {totalPieces}";
@@ -200,7 +204,7 @@ public sealed class TorrentQueueItem : INotifyPropertyChanged
         ResetMetrics(savedPieces);
 
         _cts = new CancellationTokenSource();
-        _download = new TorrentDownload(Torrent, downloadDir, new UiTorrentLogger(LogMessage));
+        _download = new TorrentDownload(Torrent, downloadDir, _config, new UiTorrentLogger(LogMessage));
 
         StartTimer();
 

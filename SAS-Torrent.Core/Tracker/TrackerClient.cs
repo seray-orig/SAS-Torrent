@@ -10,13 +10,15 @@ public sealed class TrackerClient
     private readonly TorrentInfo _torrent;
     private readonly string _peerId;
     private readonly int _port;
+    private readonly string _userAgent;
     private readonly string _announceUrl;
 
-    public TrackerClient(TorrentInfo torrent, string peerId, int port, string? announceUrl = null)
+    public TrackerClient(TorrentInfo torrent, string peerId, int port, string userAgent, string? announceUrl = null)
     {
         _torrent = torrent;
         _peerId = peerId;
         _port = port;
+        _userAgent = userAgent;
         _announceUrl = announceUrl ?? torrent.Announce;
     }
 
@@ -35,7 +37,7 @@ public sealed class TrackerClient
         };
         using var http = new HttpClient(handler);
         http.Timeout = TimeSpan.FromSeconds(30);
-        http.DefaultRequestHeaders.UserAgent.ParseAdd("qBittorrent/4.6.4");
+        http.DefaultRequestHeaders.UserAgent.ParseAdd(_userAgent);
         http.DefaultRequestHeaders.Accept.ParseAdd("*/*");
         var resp = await http.GetAsync(url, ct);
         if (!resp.IsSuccessStatusCode)
