@@ -20,9 +20,14 @@ public sealed class TrackerClient
         _announceUrl = announceUrl ?? torrent.Announce;
     }
 
-    public async Task<TrackerResponse> AnnounceAsync(CancellationToken ct)
+    public Task<TrackerResponse> AnnounceAsync(CancellationToken ct)
     {
-        var url = BuildUrl(_announceUrl);
+        return AnnounceAsync("started", ct);
+    }
+
+    public async Task<TrackerResponse> AnnounceAsync(string? eventName, CancellationToken ct)
+    {
+        var url = BuildUrl(_announceUrl, eventName);
         var handler = new HttpClientHandler
         {
             AllowAutoRedirect = true,
@@ -41,7 +46,7 @@ public sealed class TrackerClient
         return new TrackerResponse(dict);
     }
 
-    private string BuildUrl(string announceUrl)
+    private string BuildUrl(string announceUrl, string? eventName)
     {
         var peerIdBytes = Encoding.ASCII.GetBytes(_peerId);
         var infoHash = _torrent.InfoHashUrlEncoded;
@@ -54,7 +59,9 @@ public sealed class TrackerClient
         sb.Append("&peer_id=").Append(peerIdEnc);
         sb.Append("&port=").Append(_port);
         sb.Append("&uploaded=0&downloaded=0&left=").Append(_torrent.TotalLength);
-        sb.Append("&compact=1&no_peer_id=1&event=started");
+        sb.Append("&compact=1&no_peer_id=1");
+        if (!string.IsNullOrEmpty(eventName))
+            sb.Append("&event=").Append(eventName);
         return sb.ToString();
     }
 

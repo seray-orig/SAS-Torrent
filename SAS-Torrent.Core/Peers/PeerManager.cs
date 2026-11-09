@@ -83,6 +83,7 @@ public sealed class PeerManager
             return false;
         }
 
+        await conn.SendChokeAsync(ct);
         await conn.SendInterestedAsync(ct);
         _ = conn.StartReadingAsync(ct);
 

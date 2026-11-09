@@ -39,9 +39,21 @@ public static class PeerWireMessages
 
     public static byte[] BuildRequest(int index, int begin, int length)
     {
+        return BuildBlockMessage(PeerMessageId.Request, index, begin, length);
+    }
+
+    public static byte[] BuildCancel(int index, int begin, int length)
+    {
+        return BuildBlockMessage(PeerMessageId.Cancel, index, begin, length);
+    }
+
+    public static byte[] BuildKeepAlive() => new byte[4];
+
+    private static byte[] BuildBlockMessage(PeerMessageId id, int index, int begin, int length)
+    {
         var msg = new byte[17];
         WriteInt(msg, 0, 13);
-        msg[4] = (byte)PeerMessageId.Request;
+        msg[4] = (byte)id;
         WriteInt(msg, 5, index);
         WriteInt(msg, 9, begin);
         WriteInt(msg, 13, length);

@@ -57,14 +57,7 @@ public sealed class PeerDiscovery
         {
             try
             {
-                var uri = new Uri(trackerUrl);
-                TrackerResponse response;
-                if (uri.Scheme == "udp")
-                    response = await new UdpTrackerClient(_torrent, _peerId, _port, uri).AnnounceAsync(ct);
-                else if (uri.Scheme == "http" || uri.Scheme == "https")
-                    response = await new TrackerClient(_torrent, _peerId, _port, trackerUrl).AnnounceAsync(ct);
-                else
-                    return;
+                var response = await AnnounceTrackerAsync(trackerUrl, stopped: false, ct);
 
                 if (!string.IsNullOrEmpty(response.FailureReason))
                 {
@@ -108,6 +101,46 @@ public sealed class PeerDiscovery
         {
             writer.TryComplete(ex);
         }
+    }
+
+    public async Task AnnounceStoppedAsync(CancellationToken ct)
+    {
+        var tasks = BuildTrackerList().Select(async trackerUrl =>
+        {
+            try
+            {
+                await AnnounceTrackerAsync(trackerUrl, stopped: true, ct);
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex)
+            {
+                _logger?.Log($"[Discovery] Трекер {trackerUrl} не подтвердил остановку: {ex.Message}");
+            }
+        });
+
+        await Task.WhenAll(tasks);
+    }
+
+    private async Task<TrackerResponse> AnnounceTrackerAsync(string trackerUrl, bool stopped, CancellationToken ct)
+    {
+        var uri = new Uri(trackerUrl);
+        if (uri.Scheme == "udp")
+        {
+            var udpClient = new UdpTrackerClient(_torrent, _peerId, _port, uri);
+            return stopped
+                ? await udpClient.AnnounceStoppedAsync(ct)
+                : await udpClient.AnnounceAsync(ct);
+        }
+
+        if (uri.Scheme == "http" || uri.Scheme == "https")
+        {
+            var httpClient = new TrackerClient(_torrent, _peerId, _port, trackerUrl);
+            return stopped
+                ? await httpClient.AnnounceAsync("stopped", ct)
+                : await httpClient.AnnounceAsync(ct);
+        }
+
+        throw new NotSupportedException($"Неподдерживаемая схема трекера: {uri.Scheme}");
     }
 
     private List<string> BuildTrackerList()

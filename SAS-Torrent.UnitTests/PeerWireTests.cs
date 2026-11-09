@@ -34,13 +34,28 @@ public class PeerWireTests
     }
 
     [Fact]
+    public void BuildCancel_HasCorrectFormat()
+    {
+        var msg = PeerWireMessages.BuildCancel(1, 2, 16384);
+        Assert.Equal(17, msg.Length);
+        Assert.Equal((byte)PeerMessageId.Cancel, msg[4]);
+    }
+
+    [Fact]
+    public void BuildKeepAlive_HasNoPayload()
+    {
+        Assert.Equal(new byte[4], PeerWireMessages.BuildKeepAlive());
+    }
+
+    [Fact]
     public void OutboundPolicy_AllowsOnlySafeMessages()
     {
         Assert.True(PeerOutboundPolicy.IsAllowed(PeerWireMessages.BuildInterested()));
         Assert.True(PeerOutboundPolicy.IsAllowed(PeerWireMessages.BuildNotInterested()));
         Assert.True(PeerOutboundPolicy.IsAllowed(PeerWireMessages.BuildChoke()));
         Assert.True(PeerOutboundPolicy.IsAllowed(PeerWireMessages.BuildRequest(0, 0, 16384)));
-        Assert.True(PeerOutboundPolicy.IsAllowed(new byte[4]));
+        Assert.True(PeerOutboundPolicy.IsAllowed(PeerWireMessages.BuildCancel(0, 0, 16384)));
+        Assert.True(PeerOutboundPolicy.IsAllowed(PeerWireMessages.BuildKeepAlive()));
     }
 
     [Theory]
@@ -90,7 +105,16 @@ public class PeerWireTests
             .OrderBy(name => name)
             .ToArray();
 
-        Assert.Equal(new[] { "SendInterestedAsync", "SendRequestAsync" }, sendMethods);
+        Assert.Equal(
+            new[]
+            {
+                "SendCancelAsync",
+                "SendChokeAsync",
+                "SendInterestedAsync",
+                "SendKeepAliveAsync",
+                "SendRequestAsync"
+            },
+            sendMethods);
     }
 
     [Theory]

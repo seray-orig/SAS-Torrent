@@ -19,6 +19,9 @@ public sealed class PeerConnection : IDisposable
     private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(4);
     private static readonly TimeSpan FallbackDelay = TimeSpan.FromMilliseconds(1000);
     private static readonly TimeSpan HandshakeTimeout = TimeSpan.FromSeconds(10);
+    private const int MaxRequestsWhileChoked = 3;
+
+    private int _requestsWhileChoked;
 
     public string Ip { get; }
     public int Port { get; }
@@ -179,8 +182,12 @@ public sealed class PeerConnection : IDisposable
         }
         else if (id == PeerMessageId.Request)
         {
-            Disconnect();
-            return;
+            _requestsWhileChoked++;
+            if (_requestsWhileChoked >= MaxRequestsWhileChoked)
+            {
+                Disconnect();
+                return;
+            }
         }
         else if (id == PeerMessageId.Piece)
         {
@@ -196,6 +203,21 @@ public sealed class PeerConnection : IDisposable
     public Task SendRequestAsync(int index, int begin, int length, CancellationToken ct)
     {
         return SendMessageAsync(PeerWireMessages.BuildRequest(index, begin, length), ct);
+    }
+
+    public Task SendCancelAsync(int index, int begin, int length, CancellationToken ct)
+    {
+        return SendMessageAsync(PeerWireMessages.BuildCancel(index, begin, length), ct);
+    }
+
+    public Task SendChokeAsync(CancellationToken ct)
+    {
+        return SendMessageAsync(PeerWireMessages.BuildChoke(), ct);
+    }
+
+    public Task SendKeepAliveAsync(CancellationToken ct)
+    {
+        return SendMessageAsync(PeerWireMessages.BuildKeepAlive(), ct);
     }
 
     private Task SendMessageAsync(byte[] data, CancellationToken ct)

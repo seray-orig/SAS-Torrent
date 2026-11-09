@@ -74,7 +74,8 @@ try
     logger.Log(journal.GetSummary());
 
     var peerId = "-qB4640-" + RandomNumberGenerator.GetInt32(100000000).ToString("D8") + RandomNumberGenerator.GetInt32(10000).ToString("D4");
-    var port = 6881;
+    using var inboundListener = PeerInboundListener.Start(6881, torrent.InfoHash, peerId, logger);
+    var port = inboundListener.Port;
 
     var peerManager = new PeerManager(torrent.InfoHash, peerId, pieceCount, logger, journal);
     var discovery = new PeerDiscovery(torrent, peerId, port, logger);
@@ -103,6 +104,11 @@ try
     state.Flush();
     fileWriter.Close();
     peerManager.DisconnectAll();
+
+    using (var stopCts = new CancellationTokenSource(TimeSpan.FromSeconds(5)))
+    {
+        try { await discovery.AnnounceStoppedAsync(stopCts.Token); } catch (OperationCanceledException) { }
+    }
 
     logger.Log(journal.GetSummary());
 

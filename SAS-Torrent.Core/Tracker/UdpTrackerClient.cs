@@ -20,7 +20,20 @@ public sealed class UdpTrackerClient
         _uri = uri;
     }
 
-    public async Task<TrackerResponse> AnnounceAsync(CancellationToken ct)
+    private const int EventStarted = 2;
+    private const int EventStopped = 3;
+
+    public Task<TrackerResponse> AnnounceAsync(CancellationToken ct)
+    {
+        return AnnounceAsync(EventStarted, ct);
+    }
+
+    public Task<TrackerResponse> AnnounceStoppedAsync(CancellationToken ct)
+    {
+        return AnnounceAsync(EventStopped, ct);
+    }
+
+    public async Task<TrackerResponse> AnnounceAsync(int eventId, CancellationToken ct)
     {
         if (_uri.Port == -1)
             throw new Exception($"UDP трекер без порта: {_uri}");
@@ -44,7 +57,7 @@ public sealed class UdpTrackerClient
 
                 var transactionId = Random.Shared.Next();
                 var connectionId = await ConnectAsync(udp, transactionId, ct);
-                var announceResp = await AnnounceAsync(udp, connectionId, transactionId, ct);
+                var announceResp = await AnnounceAsync(udp, connectionId, transactionId, eventId, ct);
                 return ParseAnnounce(announceResp);
             }
             catch (Exception ex)
@@ -91,7 +104,7 @@ public sealed class UdpTrackerClient
         throw new Exception("Таймаут connect к UDP трекеру");
     }
 
-    private async Task<byte[]> AnnounceAsync(UdpClient udp, ulong connectionId, int transactionId, CancellationToken ct)
+    private async Task<byte[]> AnnounceAsync(UdpClient udp, ulong connectionId, int transactionId, int eventId, CancellationToken ct)
     {
         var req = new byte[98];
         WriteLong(req, 0, connectionId);
@@ -103,7 +116,7 @@ public sealed class UdpTrackerClient
         WriteLong(req, 56, 0UL);
         WriteLong(req, 64, (ulong)_torrent.TotalLength);
         WriteLong(req, 72, 0UL);
-        WriteInt(req, 80, 0);
+        WriteInt(req, 80, eventId);
         WriteInt(req, 84, 0);
         WriteInt(req, 88, Random.Shared.Next());
         WriteInt(req, 92, -1);

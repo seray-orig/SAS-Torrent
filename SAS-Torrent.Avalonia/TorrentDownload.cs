@@ -14,6 +14,8 @@ public sealed class TorrentDownload
 
     private FileWriter? _fileWriter;
     private PeerManager? _peerManager;
+    private PeerDiscovery? _discovery;
+    private PeerInboundListener? _inboundListener;
     private DownloadState? _state;
     private DownloadManager? _manager;
     private Task? _connectTask;
@@ -56,12 +58,14 @@ public sealed class TorrentDownload
             var peerId = "-qB4640-" +
                          RandomNumberGenerator.GetInt32(100000000).ToString("D8") +
                          RandomNumberGenerator.GetInt32(10000).ToString("D4");
-            const int port = 6881;
+            _inboundListener = PeerInboundListener.Start(6881, _torrent.InfoHash, peerId, _logger);
+            var port = _inboundListener.Port;
 
             var peerManager = new PeerManager(_torrent.InfoHash, peerId, pieceCount, _logger, journal);
             _peerManager = peerManager;
 
             var discovery = new PeerDiscovery(_torrent, peerId, port, _logger);
+            _discovery = discovery;
             _state = DownloadState.Load(_torrent, _downloadDir);
             _manager = new DownloadManager(_torrent, peerManager, _fileWriter, _state, _logger, journal);
 
@@ -79,6 +83,9 @@ public sealed class TorrentDownload
         {
             _cts = null;
             linked.Cancel();
+
+            _inboundListener?.Dispose();
+            _inboundListener = null;
 
             _state?.Flush();
             _fileWriter?.Close();
@@ -103,6 +110,13 @@ public sealed class TorrentDownload
                 }
 
                 _peerManager.DisconnectAll();
+            }
+
+            if (_discovery != null)
+            {
+                using var stopCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                try { await _discovery.AnnounceStoppedAsync(stopCts.Token); } catch (OperationCanceledException) { }
+                _discovery = null;
             }
         }
     }
