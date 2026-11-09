@@ -83,7 +83,7 @@ public sealed class PeerManager
             return false;
         }
 
-        await conn.SendAsync(PeerWireMessages.BuildInterested(), ct);
+        await conn.SendInterestedAsync(ct);
         _ = conn.StartReadingAsync(ct);
 
         lock (_lock)

@@ -188,7 +188,25 @@ public sealed class PeerConnection : IDisposable
         }
     }
 
-    public async Task SendAsync(byte[] data, CancellationToken ct)
+    public Task SendInterestedAsync(CancellationToken ct)
+    {
+        return SendMessageAsync(PeerWireMessages.BuildInterested(), ct);
+    }
+
+    public Task SendRequestAsync(int index, int begin, int length, CancellationToken ct)
+    {
+        return SendMessageAsync(PeerWireMessages.BuildRequest(index, begin, length), ct);
+    }
+
+    private Task SendMessageAsync(byte[] data, CancellationToken ct)
+    {
+        if (!PeerOutboundPolicy.IsAllowed(data))
+            throw new InvalidOperationException("Outbound peer message is not allowed by the P2O policy.");
+
+        return SendAllowedMessageAsync(data, ct);
+    }
+
+    private async Task SendAllowedMessageAsync(byte[] data, CancellationToken ct)
     {
         if (!IsConnected || _disposed || _stream == null) return;
         try

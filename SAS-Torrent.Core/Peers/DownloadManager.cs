@@ -342,7 +342,7 @@ public sealed class DownloadManager
         {
             if (_assembler.HasBlock(pieceIndex, begin)) continue;
             var requestSize = Math.Min(BlockSize, pieceSize - begin);
-            _ = peer.SendAsync(PeerWireMessages.BuildRequest(pieceIndex, begin, requestSize), ct);
+            _ = peer.SendRequestAsync(pieceIndex, begin, requestSize, ct);
         }
     }
 

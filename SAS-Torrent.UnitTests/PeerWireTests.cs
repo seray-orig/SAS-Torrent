@@ -1,3 +1,5 @@
+using System.IO;
+using System.Reflection;
 using SAS_Torrent.Core.Peers;
 
 namespace SAS_Torrent.UnitTests;
@@ -29,5 +31,85 @@ public class PeerWireTests
         var msg = PeerWireMessages.BuildInterested();
         Assert.Equal(5, msg.Length);
         Assert.Equal((byte)PeerMessageId.Interested, msg[4]);
+    }
+
+    [Fact]
+    public void OutboundPolicy_AllowsOnlySafeMessages()
+    {
+        Assert.True(PeerOutboundPolicy.IsAllowed(PeerWireMessages.BuildInterested()));
+        Assert.True(PeerOutboundPolicy.IsAllowed(PeerWireMessages.BuildNotInterested()));
+        Assert.True(PeerOutboundPolicy.IsAllowed(PeerWireMessages.BuildChoke()));
+        Assert.True(PeerOutboundPolicy.IsAllowed(PeerWireMessages.BuildRequest(0, 0, 16384)));
+        Assert.True(PeerOutboundPolicy.IsAllowed(new byte[4]));
+    }
+
+    [Theory]
+    [InlineData(PeerMessageId.Unchoke)]
+    [InlineData(PeerMessageId.Have)]
+    [InlineData(PeerMessageId.Bitfield)]
+    [InlineData(PeerMessageId.Piece)]
+    public void OutboundPolicy_RejectsUploadMessages(PeerMessageId id)
+    {
+        Assert.False(PeerOutboundPolicy.IsAllowed(BuildMessage(id)));
+    }
+
+    [Fact]
+    public void OutboundPolicy_RejectsMalformedMessage()
+    {
+        var message = new byte[5];
+        message[4] = (byte)PeerMessageId.Interested;
+
+        Assert.False(PeerOutboundPolicy.IsAllowed(message));
+    }
+
+    [Fact]
+    public void PeerConnection_DoesNotExposeRawByteSender()
+    {
+        var methods = typeof(PeerConnection).GetMethods(
+            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly);
+        var byteLikeTypes = new[]
+        {
+            typeof(byte[]),
+            typeof(Memory<byte>),
+            typeof(ReadOnlyMemory<byte>),
+            typeof(Stream)
+        };
+
+        Assert.DoesNotContain(methods, method => method.Name == "SendAsync");
+        Assert.DoesNotContain(methods, method =>
+            method.GetParameters().Any(parameter => byteLikeTypes.Contains(parameter.ParameterType)));
+    }
+
+    [Fact]
+    public void PeerConnection_ExposesOnlyP2oSafeSendMethods()
+    {
+        var sendMethods = typeof(PeerConnection).GetMethods(
+                BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+            .Where(method => method.Name.StartsWith("Send", StringComparison.Ordinal))
+            .Select(method => method.Name)
+            .OrderBy(name => name)
+            .ToArray();
+
+        Assert.Equal(new[] { "SendInterestedAsync", "SendRequestAsync" }, sendMethods);
+    }
+
+    [Theory]
+    [InlineData("BuildPiece")]
+    [InlineData("BuildUnchoke")]
+    [InlineData("BuildHave")]
+    [InlineData("BuildBitfield")]
+    public void PeerWireMessages_HasNoUploadBuilders(string methodName)
+    {
+        Assert.Null(typeof(PeerWireMessages).GetMethod(
+            methodName,
+            BindingFlags.Public | BindingFlags.Static));
+    }
+
+    private static byte[] BuildMessage(PeerMessageId id)
+    {
+        var message = new byte[5];
+        message[3] = 1;
+        message[4] = (byte)id;
+        return message;
     }
 }

@@ -61,3 +61,29 @@ public static class PeerWireMessages
         return (buf[offset] << 24) | (buf[offset + 1] << 16) | (buf[offset + 2] << 8) | buf[offset + 3];
     }
 }
+
+internal static class PeerOutboundPolicy
+{
+    public static bool IsAllowed(byte[] message)
+    {
+        if (message.Length == 4)
+            return PeerWireMessages.ReadInt(message, 0) == 0;
+
+        if (message.Length < 5)
+            return false;
+
+        if (PeerWireMessages.ReadInt(message, 0) != message.Length - 4)
+            return false;
+
+        return IsAllowed((PeerMessageId)message[4]);
+    }
+
+    private static bool IsAllowed(PeerMessageId id)
+    {
+        return id is PeerMessageId.Interested
+            or PeerMessageId.NotInterested
+            or PeerMessageId.Request
+            or PeerMessageId.Cancel
+            or PeerMessageId.Choke;
+    }
+}
