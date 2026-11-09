@@ -52,7 +52,7 @@ jobs:
         run: |
           RAW_VER="${GITHUB_REF_NAME#v}"
           CLEAN_VER="${RAW_VER#dev}"
-          dotnet publish SAS-Torrent.Avalonia/SAS-Torrent.Avalonia.csproj -c Release -p:Version="$CLEAN_VER" -o ./${{ matrix.rid }} -r ${{ matrix.rid }} -p:AssemblyName=SAS-Torrent_${{ matrix.rid }}
+          dotnet publish SAS-Torrent.Avalonia/SAS-Torrent.Avalonia.csproj -c Release -p:Version="$CLEAN_VER" -o ./${{ matrix.rid }} -r ${{ matrix.rid }}
 
       - name: Переименовываем артефакт
         run: mv ./${{ matrix.rid }}/* ./${{ matrix.rid }}/SAS-Torrent_${{ matrix.rid }}
