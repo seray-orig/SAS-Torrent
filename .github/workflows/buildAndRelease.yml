@@ -77,7 +77,6 @@ jobs:
     needs: publish
     permissions:
       contents: write
-      workflows: write
 
     steps:
     - name: Клонируем репозиторий
