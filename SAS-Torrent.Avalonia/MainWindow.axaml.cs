@@ -1,12 +1,19 @@
 using System;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
+using System.Reflection;
+using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using SAS_Torrent.Core.Bencode;
 using SAS_Torrent.Core.Config;
 using SAS_Torrent.Core.IO;
@@ -16,15 +23,29 @@ namespace SAS_Torrent.Avalonia;
 
 public partial class MainWindow : Window
 {
+    private const string GitHubLatestReleaseApi = "https://api.github.com/repos/seray-orig/SAS-Torrent/releases/latest";
+    private const string GitHubLatestReleaseUrl = "https://github.com/seray-orig/SAS-Torrent/releases/latest";
+    private const string GitHubIssuesUrl      = "https://github.com/seray-orig/SAS-Torrent/issues";
+
+    /// <summary>
+    /// Полная текстовая версия, полученная из -p:Version (через AssemblyInformationalVersion).
+    /// </summary>
+    private static readonly string FullVersionString = BuildFullVersionString();
+
     private readonly AppConfig _config;
     private readonly ObservableCollection<TorrentQueueItem> _queue = new();
+
+    private bool _languageEng;
+    private bool _hasUpdate;
 
     public MainWindow() : this(Array.Empty<string>()) { }
 
     public MainWindow(string[] args)
     {
         InitializeComponent();
-        
+
+        Title = $"SAS Torrent {FullVersionString}";
+
         try { _config = AppConfig.EnsureCreated(); }
         catch { _config = new AppConfig(); }
 
@@ -43,6 +64,135 @@ public partial class MainWindow : Window
         }
 
         UpdateQueuePlaceholder();
+
+        _ = CheckForUpdatesAsync();
+    }
+
+    private static string BuildFullVersionString()
+    {
+        try
+        {
+            var asm = Assembly.GetExecutingAssembly();
+            var info = asm.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+            if (string.IsNullOrWhiteSpace(info))
+                return asm.GetName().Version?.ToString() ?? "unknown";
+
+            var plus = info.IndexOf('+');
+            if (plus >= 0) info = info[..plus];
+            return info.Trim();
+        }
+        catch
+        {
+            return "unknown";
+        }
+    }
+
+    /// <summary>
+    /// Числовая версия для сравнения с GitHub.
+    /// Поддерживаются теги вида "v1.2.3" и "dev1.2.3". Нечисловые значения возвращают null.
+    /// </summary>
+    private static Version? GetComparableVersion() => TryParseLooseVersion(FullVersionString);
+
+    private static Version? TryParseLooseVersion(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+
+        var s = raw.Trim();
+
+        var plus = s.IndexOf('+');
+        if (plus >= 0) s = s[..plus];
+
+        var dash = s.IndexOf('-');
+        if (dash >= 0) s = s[..dash];
+
+        if (s.StartsWith("dev", StringComparison.OrdinalIgnoreCase))
+            s = s[3..];
+        else if (s.Length > 0 && (s[0] == 'v' || s[0] == 'V'))
+            s = s[1..];
+
+        return Version.TryParse(s, out var v) ? v : null;
+    }
+
+    private static Version Normalize(Version v) =>
+        new(v.Major, v.Minor, Math.Max(v.Build, 0), Math.Max(v.Revision, 0));
+
+    private void OnLanguageClick(object? sender, RoutedEventArgs e)
+    {
+        _languageEng = !_languageEng;
+        LanguageButton.Content = _languageEng ? "eng" : "rus";
+    }
+
+    private async void OnVersionClick(object? sender, RoutedEventArgs e)
+    {
+        if (!_hasUpdate)
+            await CheckForUpdatesAsync();
+
+        await OpenUrlAsync(GitHubLatestReleaseUrl);
+    }
+
+    private async void OnIssueClick(object? sender, RoutedEventArgs e)
+    {
+        await OpenUrlAsync(GitHubIssuesUrl);
+    }
+
+    private async Task OpenUrlAsync(string url)
+    {
+        try
+        {
+            var topLevel = TopLevel.GetTopLevel(this);
+            if (topLevel?.Launcher != null)
+            {
+                await topLevel.Launcher.LaunchUriAsync(new Uri(url));
+                return;
+            }
+        }
+        catch { }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            GlobalStatusText.Text = $"Не удалось открыть ссылку: {url} ({ex.Message})";
+        }
+    }
+
+    private async Task CheckForUpdatesAsync()
+    {
+        var current = GetComparableVersion();
+        if (current == null) return;
+
+        try
+        {
+            using var http = new HttpClient();
+            http.DefaultRequestHeaders.UserAgent.ParseAdd("SAS-Torrent");
+            http.DefaultRequestHeaders.CacheControl =
+                new System.Net.Http.Headers.CacheControlHeaderValue { NoCache = true };
+            http.Timeout = TimeSpan.FromSeconds(10);
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var json = await http.GetStringAsync(GitHubLatestReleaseApi, cts.Token);
+
+            using var doc = JsonDocument.Parse(json);
+            if (!doc.RootElement.TryGetProperty("tag_name", out var tagEl)) return;
+            var tag = tagEl.GetString();
+            if (string.IsNullOrWhiteSpace(tag)) return;
+
+            var latest = TryParseLooseVersion(tag);
+            if (latest == null) return;
+
+            if (Normalize(latest) > Normalize(current))
+            {
+                _hasUpdate = true;
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    VersionButton.Content = "Обнови клиент!";
+                    VersionButton.Classes.Set("btn-green", true);
+                });
+            }
+        }
+        catch { }
     }
 
     private void AddTorrentToQueue(string path)
