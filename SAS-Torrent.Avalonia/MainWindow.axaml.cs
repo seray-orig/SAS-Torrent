@@ -9,11 +9,13 @@ using System.Reflection;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
+using SAS_Torrent.Avalonia.Localization;
 using SAS_Torrent.Core.Bencode;
 using SAS_Torrent.Core.Config;
 using SAS_Torrent.Core.IO;
@@ -33,20 +35,24 @@ public partial class MainWindow : Window
     private static readonly string FullVersionString = BuildFullVersionString();
 
     private readonly AppConfig _config;
+    private readonly ILanguageService _language;
     private readonly ObservableCollection<TorrentQueueItem> _queue = new();
 
-    private bool _languageEng;
+    private Func<string>? _statusTextFactory;
     private bool _hasUpdate;
 
-    public MainWindow() : this(Array.Empty<string>()) { }
+    public MainWindow() : this(Array.Empty<string>(), null, null) { }
 
-    public MainWindow(string[] args)
+    public MainWindow(string[] args, ILanguageService? languageService = null, AppConfig? config = null)
     {
         InitializeComponent();
 
         Title = $"SAS Torrent {FullVersionString}";
 
-        try { _config = AppConfig.EnsureCreated(); }
+        _language = languageService ?? ResolveLanguageService();
+        _language.LanguageChanged += OnLanguageChanged;
+
+        try { _config = config ?? AppConfig.EnsureCreated(); }
         catch { _config = new AppConfig(); }
 
         DownloadFolderBox.Text = _config.ResolveDownloadsFolder();
@@ -64,9 +70,15 @@ public partial class MainWindow : Window
         }
 
         UpdateQueuePlaceholder();
+        ApplyLanguageTexts();
 
         _ = CheckForUpdatesAsync();
     }
+
+    private static ILanguageService ResolveLanguageService() =>
+        Application.Current is App app
+            ? app.LanguageService
+            : AvaloniaLanguageService.CreateDefault(Application.Current!);
 
     private static string BuildFullVersionString()
     {
@@ -116,10 +128,37 @@ public partial class MainWindow : Window
     private static Version Normalize(Version v) =>
         new(v.Major, v.Minor, Math.Max(v.Build, 0), Math.Max(v.Revision, 0));
 
+    private void ApplyLanguageTexts()
+    {
+        LanguageButton.Content = _language.Current == AppLanguage.Russian ? "rus" : "eng";
+    }
+
+    private void OnLanguageChanged()
+    {
+        ApplyLanguageTexts();
+
+        VersionButton.Content = _hasUpdate
+            ? _language.GetString("MainWindow.UpdateAvailable")
+            : _language.GetString("MainWindow.NoUpdates");
+
+        UpdateGlobalActionState();
+
+        if (_statusTextFactory != null)
+            GlobalStatusText.Text = _statusTextFactory();
+
+        foreach (var item in _queue)
+            item.OnLanguageChanged();
+    }
+
     private void OnLanguageClick(object? sender, RoutedEventArgs e)
     {
-        _languageEng = !_languageEng;
-        LanguageButton.Content = _languageEng ? "eng" : "rus";
+        _language.ToggleLanguage();
+    }
+
+    private void SetStatusText(Func<string> textFactory)
+    {
+        _statusTextFactory = textFactory;
+        GlobalStatusText.Text = textFactory();
     }
 
     private async void OnVersionClick(object? sender, RoutedEventArgs e)
@@ -154,7 +193,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            GlobalStatusText.Text = $"Не удалось открыть ссылку: {url} ({ex.Message})";
+            SetStatusText(() => _language.GetString("MainWindow.OpenLinkFailedFormat", url, ex.Message));
         }
     }
 
@@ -187,7 +226,7 @@ public partial class MainWindow : Window
                 _hasUpdate = true;
                 await Dispatcher.UIThread.InvokeAsync(() =>
                 {
-                    VersionButton.Content = "Обнови клиент!";
+                    VersionButton.Content = _language.GetString("MainWindow.UpdateAvailable");
                     VersionButton.Classes.Set("btn-green", true);
                 });
             }
@@ -201,14 +240,14 @@ public partial class MainWindow : Window
         {
             var bytes = File.ReadAllBytes(path);
             if (BencodeParser.Parse(bytes) is not BencodeDictionary root)
-                throw new InvalidDataException("Неверный формат .torrent файла");
+                throw new InvalidDataException(_language.GetString("MainWindow.InvalidTorrentFile"));
 
             var torrent = new TorrentInfo(root);
             var infoHashHex = Convert.ToHexString(torrent.InfoHash);
 
             if (_queue.Any(q => string.Equals(q.InfoHashHex, infoHashHex, StringComparison.OrdinalIgnoreCase)))
             {
-                GlobalStatusText.Text = $"Торрент уже есть в очереди: {torrent.Name}";
+                SetStatusText(() => _language.GetString("MainWindow.TorrentAlreadyQueuedFormat", torrent.Name));
                 return;
             }
 
@@ -216,19 +255,20 @@ public partial class MainWindow : Window
                 torrent, 
                 () => _config.ResolveDownloadDirectory(FileWriter.SanitizeName(torrent.Name)),
                 _config,
+                _language,
                 RemoveTorrentFromQueue
             );
             
             item.PropertyChanged += OnItemPropertyChanged;
             _queue.Add(item);
             
-            GlobalStatusText.Text = $"Добавлен торрент: {torrent.Name}";
+            SetStatusText(() => _language.GetString("MainWindow.TorrentAddedFormat", torrent.Name));
             UpdateQueuePlaceholder();
             UpdateGlobalActionState();
         }
         catch (Exception ex)
         {
-            GlobalStatusText.Text = $"Ошибка добавления {Path.GetFileName(path)}: {ex.Message}";
+            SetStatusText(() => _language.GetString("MainWindow.AddTorrentErrorFormat", Path.GetFileName(path), ex.Message));
         }
     }
 
@@ -256,7 +296,9 @@ public partial class MainWindow : Window
     private void UpdateGlobalActionState()
     {
         bool anyDownloading = _queue.Any(q => q.IsDownloading);
-        GlobalActionButton.Content = anyDownloading ? "Остановить все" : "Начать все";
+        GlobalActionButton.Content = anyDownloading
+            ? _language.GetString("MainWindow.StopAll")
+            : _language.GetString("MainWindow.StartAll");
         GlobalActionButton.Classes.Set("btn-red", anyDownloading);
         GlobalActionButton.Classes.Set("btn-green", !anyDownloading);
     }
@@ -270,7 +312,7 @@ public partial class MainWindow : Window
             foreach (var item in _queue.Where(q => q.IsDownloading))
                 item.Stop();
                 
-            GlobalStatusText.Text = "Все загрузки остановлены";
+            SetStatusText(() => _language.GetString("MainWindow.AllDownloadsStopped"));
         }
         else
         {
@@ -283,7 +325,10 @@ public partial class MainWindow : Window
                     started++;
                 }
             }
-            GlobalStatusText.Text = started > 0 ? $"Запущено торрентов: {started}" : "Нет торрентов для запуска";
+            if (started > 0)
+                SetStatusText(() => _language.GetString("MainWindow.TorrentsStartedFormat", started));
+            else
+                SetStatusText(() => _language.GetString("MainWindow.NoTorrentsToStart"));
         }
         
         UpdateGlobalActionState();
@@ -293,7 +338,7 @@ public partial class MainWindow : Window
     {
         var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
-            Title = "Выберите торрент-файл",
+            Title = _language.GetString("MainWindow.SelectTorrentFileTitle"),
             AllowMultiple = true,
             FileTypeFilter = new[] { new FilePickerFileType("Torrent Files") { Patterns = new[] { "*.torrent" } } }
         });
@@ -309,7 +354,7 @@ public partial class MainWindow : Window
     {
         var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
         {
-            Title = "Выберите папку для сохранения торрентов",
+            Title = _language.GetString("MainWindow.SelectDownloadFolderTitle"),
             AllowMultiple = false
         });
 

@@ -25,6 +25,9 @@ public sealed class AppConfig
     [JsonPropertyName("customDownloadsFolderPath")]
     public string? CustomDownloadsFolderPath { get; set; }
 
+    [JsonPropertyName("uiLanguage")]
+    public string? UiLanguage { get; set; }
+
     [JsonPropertyName("userAgent")]
     public string UserAgent { get; set; } = DefaultUserAgent;
 

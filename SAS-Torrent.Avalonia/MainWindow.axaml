@@ -19,19 +19,19 @@
                   VerticalAlignment="Center">
 
           <Button x:Name="VersionButton"
-                  Content="Нет обновлений"
+                  Content="{DynamicResource MainWindow.NoUpdates}"
                   Click="OnVersionClick"
                   FontSize="12"
                   Padding="8,4"
-                  ToolTip.Tip="Проверить обновления на GitHub" />
+                  ToolTip.Tip="{DynamicResource MainWindow.CheckUpdatesTooltip}" />
 
           <Button x:Name="IssueButton"
                   Classes="btn-red"
-                  Content="Ошибка?"
+                  Content="{DynamicResource MainWindow.ReportBug}"
                   Click="OnIssueClick"
                   FontSize="12"
                   Padding="8,4"
-                  ToolTip.Tip="Открыть страницу issues на GitHub" />
+                  ToolTip.Tip="{DynamicResource MainWindow.IssuesTooltip}" />
 
           <Button x:Name="LanguageButton"
                   Content="rus"
@@ -39,33 +39,34 @@
                   FontSize="12"
                   Padding="8,4"
                   MinWidth="32"
-                  VerticalAlignment="Center" />
-                  
+                  VerticalAlignment="Center"
+                  ToolTip.Tip="{DynamicResource MainWindow.LanguageTooltip}" />
+                   
         </StackPanel>
 
       <Grid ColumnDefinitions="*,Auto">
         <TextBlock Classes="win10-instruction" 
-                   Text="Очередь загрузок" 
+                   Text="{DynamicResource MainWindow.QueueHeader}" 
                    VerticalAlignment="Center" />
         <Button Grid.Column="1" 
                 Classes="btn-blue"
-                Content="+ Добавить в очередь" 
+                Content="{DynamicResource MainWindow.AddToQueue}" 
                 Click="OnAddTorrentClick" />
       </Grid>
       
       <Border Classes="win10-box" Padding="10">
         <StackPanel Spacing="6">
-          <TextBlock Text="Общая папка сохранения:" Classes="win10-subtext" FontWeight="SemiBold" />
+          <TextBlock Text="{DynamicResource MainWindow.SaveFolderLabel}" Classes="win10-subtext" FontWeight="SemiBold" />
           <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
             <TextBox x:Name="DownloadFolderBox" 
                      Grid.Column="0" 
                      IsReadOnly="True" 
                      Background="#F5F5F5" />
             <Button Grid.Column="1" 
-                    Content="Обзор..." 
+                    Content="{DynamicResource Common.Browse}" 
                     Click="OnBrowseFolderClick" />
             <Button Grid.Column="2" 
-                    Content="Сбросить" 
+                    Content="{DynamicResource Common.Reset}" 
                     Click="OnResetFolderClick" />
           </Grid>
         </StackPanel>
@@ -84,7 +85,7 @@
                      FontWeight="SemiBold"
                      Foreground="#8A8A8A"
                      HorizontalAlignment="Center" />
-          <TextBlock Text="Перетащи сюда"
+          <TextBlock Text="{DynamicResource MainWindow.DropHere}"
                      FontSize="14"
                      Foreground="#9E9E9E"
                      HorizontalAlignment="Center" />
@@ -162,7 +163,7 @@
                               Content="X"
                               Command="{Binding RemoveCommand}"
                               VerticalAlignment="Center"
-                              ToolTip.Tip="Удалить из очереди" />
+                              ToolTip.Tip="{DynamicResource MainWindow.RemoveFromQueueTooltip}" />
                     </Grid>
                   </Expander.Header>
                   
@@ -184,16 +185,16 @@
                             <Grid ColumnDefinitions="Auto,*,Auto" Margin="4,3,8,3">
                               <CheckBox Grid.Column="0" IsChecked="{Binding IsSelected, Mode=TwoWay}" VerticalAlignment="Center" />
                               <TextBlock Grid.Column="1" 
-                                         Text="{Binding RelativePath}" 
-                                         TextTrimming="CharacterEllipsis" 
-                                         ToolTip.Tip="{Binding RelativePath}" 
-                                         VerticalAlignment="Center" 
-                                         Margin="8,0" />
+                                          Text="{Binding RelativePath}" 
+                                          TextTrimming="CharacterEllipsis" 
+                                          ToolTip.Tip="{Binding RelativePath}" 
+                                          VerticalAlignment="Center" 
+                                          Margin="8,0" />
                               <TextBlock Grid.Column="2" 
-                                         Text="{Binding SizeText}" 
-                                         Foreground="#555555" 
-                                         VerticalAlignment="Center" 
-                                         Margin="8,0,6,0" />
+                                          Text="{Binding SizeText}" 
+                                          Foreground="#555555" 
+                                          VerticalAlignment="Center" 
+                                          Margin="8,0,6,0" />
                             </Grid>
                           </DataTemplate>
                         </ItemsControl.ItemTemplate>
@@ -214,7 +215,7 @@
         <Button x:Name="GlobalActionButton"
                 Grid.Column="1" 
                 Classes="btn-green"
-                Content="Начать все" 
+                Content="{DynamicResource MainWindow.StartAll}" 
                 Click="OnGlobalActionClick" />
       </Grid>
     </Border>

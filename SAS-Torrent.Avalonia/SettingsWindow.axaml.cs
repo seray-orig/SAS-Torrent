@@ -1,7 +1,9 @@
 using System.Diagnostics;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using SAS_Torrent.Avalonia.Localization;
 using SAS_Torrent.Core.Config;
 
 namespace SAS_Torrent.Avalonia;
@@ -9,26 +11,62 @@ namespace SAS_Torrent.Avalonia;
 public partial class SettingsWindow : Window
 {
     private readonly AppConfig _config;
+    private readonly ILanguageService _language;
     private string? _customPath;
+    private Func<string>? _errorTextFactory;
 
-    public SettingsWindow() : this(new AppConfig())
+    public SettingsWindow() : this(new AppConfig(), null)
     {
     }
 
-    public SettingsWindow(AppConfig config)
+    public SettingsWindow(AppConfig config, ILanguageService? languageService = null)
     {
         InitializeComponent();
         _config = config;
+        _language = languageService ?? ResolveLanguageService();
+        _language.LanguageChanged += OnLanguageChanged;
+        Closed += (s, e) => _language.LanguageChanged -= OnLanguageChanged;
         _customPath = config.CustomDownloadsFolderPath;
         DownloadPathBox.Text = config.ResolveDownloadsFolder();
-        DefaultPathText.Text = $"По умолчанию: {config.GetDefaultDownloadsFolder()}";
+        RefreshDefaultPathText();
+    }
+
+    private static ILanguageService ResolveLanguageService() =>
+        Application.Current is App app
+            ? app.LanguageService
+            : AvaloniaLanguageService.CreateDefault(Application.Current!);
+
+    private void OnLanguageChanged()
+    {
+        RefreshDefaultPathText();
+
+        if (_errorTextFactory != null)
+            ErrorText.Text = _errorTextFactory();
+    }
+
+    private void RefreshDefaultPathText()
+    {
+        DefaultPathText.Text = _language.GetString(
+            "Settings.DefaultPathFormat", _config.GetDefaultDownloadsFolder());
+    }
+
+    private void SetErrorText(Func<string> textFactory)
+    {
+        _errorTextFactory = textFactory;
+        ErrorText.Text = textFactory();
+    }
+
+    private void ClearErrorText()
+    {
+        _errorTextFactory = null;
+        ErrorText.Text = string.Empty;
     }
 
     private async void OnBrowseClick(object? sender, RoutedEventArgs e)
     {
         var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
         {
-            Title = "Выберите папку для скачивания",
+            Title = _language.GetString("Settings.SelectFolderTitle"),
             AllowMultiple = false
         });
 
@@ -38,14 +76,14 @@ public partial class SettingsWindow : Window
 
         _customPath = path;
         DownloadPathBox.Text = path;
-        ErrorText.Text = string.Empty;
+        ClearErrorText();
     }
 
     private void OnResetClick(object? sender, RoutedEventArgs e)
     {
         _customPath = null;
         DownloadPathBox.Text = _config.GetDefaultDownloadsFolder();
-        ErrorText.Text = string.Empty;
+        ClearErrorText();
     }
 
     private void OnOpenFolderClick(object? sender, RoutedEventArgs e)
@@ -61,7 +99,7 @@ public partial class SettingsWindow : Window
         }
         catch (Exception ex)
         {
-            ErrorText.Text = $"Не удалось открыть папку: {ex.Message}";
+            SetErrorText(() => _language.GetString("Settings.OpenFolderFailedFormat", ex.Message));
         }
     }
 
@@ -76,7 +114,7 @@ public partial class SettingsWindow : Window
         }
         catch (Exception ex)
         {
-            ErrorText.Text = $"Не удалось сохранить настройки: {ex.Message}";
+            SetErrorText(() => _language.GetString("Settings.SaveFailedFormat", ex.Message));
         }
     }
 

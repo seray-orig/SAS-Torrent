@@ -1,7 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="SAS_Torrent.Avalonia.SettingsWindow"
-        Title="Настройки"
+        Title="{DynamicResource Settings.Title}"
         Width="520"
         Height="230"
         MinWidth="420"
@@ -12,13 +12,13 @@
   <Grid RowDefinitions="*,Auto">
     <StackPanel Grid.Row="0" Margin="18,14,18,12" Spacing="8">
       <TextBlock Classes="win10-instruction"
-                 Text="Параметры папки загрузки" />
+                 Text="{DynamicResource Settings.Header}" />
 
       <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
         <TextBox x:Name="DownloadPathBox" IsReadOnly="True" />
         <Button x:Name="BrowseButton"
                 Grid.Column="1"
-                Content="Обзор..."
+                Content="{DynamicResource Common.Browse}"
                 Click="OnBrowseClick" />
       </Grid>
 
@@ -26,7 +26,7 @@
         <TextBlock x:Name="DefaultPathText"
                    Foreground="#444444"
                    TextWrapping="Wrap" />
-        <TextBlock Text="Для каждого торрента внутри выбранной директории создается отдельная подпапка."
+        <TextBlock Text="{DynamicResource Settings.SubfolderHint}"
                    Foreground="#444444"
                    TextWrapping="Wrap" />
         <TextBlock x:Name="ErrorText"
@@ -40,18 +40,18 @@
                   HorizontalAlignment="Right"
                   Spacing="8">
         <Button x:Name="OpenFolderButton"
-                Content="Открыть папку"
+                Content="{DynamicResource Settings.OpenFolder}"
                 Click="OnOpenFolderClick" />
         <Button x:Name="ResetButton"
-                Content="Сбросить"
+                Content="{DynamicResource Common.Reset}"
                 Click="OnResetClick" />
         <Button x:Name="SaveButton"
                 Classes="accent"
-                Content="Сохранить"
+                Content="{DynamicResource Settings.Save}"
                 Click="OnSaveClick"
                 IsDefault="True" />
         <Button x:Name="CancelButton"
-                Content="Отмена"
+                Content="{DynamicResource Settings.Cancel}"
                 Click="OnCancelClick" />
       </StackPanel>
     </Border>
