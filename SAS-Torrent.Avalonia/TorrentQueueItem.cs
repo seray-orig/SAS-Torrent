@@ -7,6 +7,7 @@ using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Threading;
+using SAS_Torrent.Avalonia.Localization;
 using SAS_Torrent.Core.Config;
 using SAS_Torrent.Core.Torrent;
 
@@ -14,6 +15,16 @@ namespace SAS_Torrent.Avalonia;
 
 public sealed class TorrentQueueItem : INotifyPropertyChanged
 {
+    private enum TorrentStatusKind
+    {
+        None,
+        Connecting,
+        ActivePeers,
+        Completed,
+        Stopped,
+        Error
+    }
+
     private static readonly TimeSpan SpeedWindowDuration = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan EtaPublishInterval = TimeSpan.FromSeconds(10);
 
@@ -29,12 +40,19 @@ public sealed class TorrentQueueItem : INotifyPropertyChanged
     private DateTime _lastEtaPublishTime;
     private TimeSpan? _publishedEta;
 
+    private readonly ILanguageService _language;
+    private readonly int _totalPieces;
+    private TorrentStatusKind _statusKind;
+    private int _statusActivePeers;
+    private int _statusCompletedPieces;
+    private int _statusTotalPieces;
+    private string _statusError = string.Empty;
+
     private bool _isDownloading;
     private bool _isExpanded;
-    private string _status = string.Empty;
     private string _selectedFilesText = string.Empty;
-    private string _speedText = "Скорость: 0 Б/с";
-    private string _etaText = "Осталось: —";
+    private string _speedText = string.Empty;
+    private string _etaText = string.Empty;
     private int _progressValue;
     private int _progressMax = 1;
     private readonly Func<string> _getDownloadDirectory;
@@ -43,8 +61,8 @@ public sealed class TorrentQueueItem : INotifyPropertyChanged
     public TorrentInfo Torrent { get; }
     public string InfoHashHex { get; }
     public string Name => Torrent.Name;
-    public string SizeText => SizeFormatter.Format(Torrent.TotalLength);
-    public string TotalPiecesText { get; }
+    public string SizeText => SizeFormatter.Format(Torrent.TotalLength, _language);
+    public string TotalPiecesText => _language.GetString("Torrent.PiecesCountFormat", _totalPieces);
     public ObservableCollection<FileEntry> Files { get; } = new();
 
     public RelayCommand ToggleDownloadCommand { get; }
@@ -74,7 +92,9 @@ public sealed class TorrentQueueItem : INotifyPropertyChanged
         }
     }
 
-    public string ButtonText => IsDownloading ? "Остановить" : "Скачать";
+    public string ButtonText => IsDownloading
+        ? _language.GetString("Torrent.ButtonStop")
+        : _language.GetString("Torrent.ButtonDownload");
 
     public string SelectedFilesText
     {
@@ -82,18 +102,9 @@ public sealed class TorrentQueueItem : INotifyPropertyChanged
         private set { _selectedFilesText = value; OnPropertyChanged(); }
     }
 
-    public string Status
-    {
-        get => _status;
-        private set
-        {
-            _status = value;
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(HasStatus));
-        }
-    }
+    public string Status => FormatStatus();
 
-    public bool HasStatus => !string.IsNullOrEmpty(_status);
+    public bool HasStatus => _statusKind != TorrentStatusKind.None;
 
     public string SpeedText
     {
@@ -125,15 +136,16 @@ public sealed class TorrentQueueItem : INotifyPropertyChanged
         TorrentInfo torrent,
         Func<string> getDownloadDirectory,
         AppConfig config,
+        ILanguageService language,
         Action<TorrentQueueItem> onRemove)
     {
         Torrent = torrent;
         InfoHashHex = Convert.ToHexString(torrent.InfoHash);
         _getDownloadDirectory = getDownloadDirectory;
         _config = config;
+        _language = language;
 
-        var totalPieces = TorrentSelection.GetPieceCount(torrent);
-        TotalPiecesText = $"Кусков: {totalPieces}";
+        _totalPieces = TorrentSelection.GetPieceCount(torrent);
 
         ToggleDownloadCommand = new RelayCommand(ToggleDownload);
         RemoveCommand = new RelayCommand(() =>
@@ -157,7 +169,7 @@ public sealed class TorrentQueueItem : INotifyPropertyChanged
             }
             offset += file.Length;
 
-            var entry = new FileEntry(file, filePieces);
+            var entry = new FileEntry(file, filePieces, _language);
             entry.PropertyChanged += (s, e) =>
             {
                 if (e.PropertyName == nameof(FileEntry.IsSelected))
@@ -166,13 +178,31 @@ public sealed class TorrentQueueItem : INotifyPropertyChanged
             Files.Add(entry);
         }
 
+        SpeedText = FormatSpeedText(_smoothedSpeed);
+        EtaText = FormatIdleEtaText();
         UpdateSelectionInfo();
+    }
+
+    public void OnLanguageChanged()
+    {
+        OnPropertyChanged(nameof(SizeText));
+        OnPropertyChanged(nameof(TotalPiecesText));
+        OnPropertyChanged(nameof(ButtonText));
+        OnPropertyChanged(nameof(Status));
+        OnPropertyChanged(nameof(HasStatus));
+
+        SpeedText = FormatSpeedText(_smoothedSpeed);
+        RefreshEtaText();
+        UpdateSelectionInfo();
+
+        foreach (var entry in Files)
+            entry.OnLanguageChanged();
     }
 
     private void UpdateSelectionInfo()
     {
         var selectedFilesCount = Files.Count(f => f.IsSelected);
-        SelectedFilesText = $"Выбрано файлов: {selectedFilesCount} / {Files.Count}";
+        SelectedFilesText = _language.GetString("Torrent.SelectedFilesFormat", selectedFilesCount, Files.Count);
 
         if (IsDownloading) return;
 
@@ -197,11 +227,11 @@ public sealed class TorrentQueueItem : INotifyPropertyChanged
         var savedPieces = TorrentSelection.CountSavedSelectedPieces(Torrent, downloadDir, Torrent.Files);
 
         IsDownloading = true;
-        Status = "Подключение...";
+        SetStatus(TorrentStatusKind.Connecting);
         ProgressValue = savedPieces;
-        SpeedText = "Скорость: 0 Б/с";
-        EtaText = "Осталось: расчет (15 с)...";
         ResetMetrics(savedPieces);
+        SpeedText = FormatSpeedText(_smoothedSpeed);
+        EtaText = FormatEtaText(_publishedEta);
 
         _cts = new CancellationTokenSource();
         _download = new TorrentDownload(Torrent, downloadDir, _config, new UiTorrentLogger(LogMessage));
@@ -216,7 +246,7 @@ public sealed class TorrentQueueItem : INotifyPropertyChanged
         catch (OperationCanceledException) { }
         catch (Exception ex)
         {
-            Status = $"Ошибка: {ex.Message}";
+            SetErrorStatus(ex.Message);
         }
         finally
         {
@@ -228,19 +258,20 @@ public sealed class TorrentQueueItem : INotifyPropertyChanged
 
             _speedSamples.Clear();
             _etaSamples.Clear();
-            SpeedText = "Скорость: 0 Б/с";
+            _smoothedSpeed = 0;
+            SpeedText = FormatSpeedText(_smoothedSpeed);
 
             if (completed)
             {
                 ProgressValue = ProgressMax;
-                Status = "Завершено";
-                EtaText = "Осталось: 0 мин";
+                SetStatus(TorrentStatusKind.Completed);
+                EtaText = FormatEtaText(TimeSpan.Zero);
             }
             else
             {
-                EtaText = "Осталось: —";
-                if (Status == "Подключение..." || Status.Contains("Активных"))
-                    Status = "Остановлено";
+                EtaText = FormatIdleEtaText();
+                if (_statusKind == TorrentStatusKind.Connecting || _statusKind == TorrentStatusKind.ActivePeers)
+                    SetStatus(TorrentStatusKind.Stopped);
             }
         }
     }
@@ -250,6 +281,55 @@ public sealed class TorrentQueueItem : INotifyPropertyChanged
         _cts?.Cancel();
         _download?.Stop();
         _download?.FlushState();
+    }
+
+    private string FormatStatus() => _statusKind switch
+    {
+        TorrentStatusKind.Connecting => _language.GetString("Torrent.StatusConnecting"),
+        TorrentStatusKind.ActivePeers => _language.GetString("Torrent.StatusActivePeersFormat", _statusActivePeers, _statusCompletedPieces, _statusTotalPieces),
+        TorrentStatusKind.Completed => _language.GetString("Torrent.StatusCompleted"),
+        TorrentStatusKind.Stopped => _language.GetString("Torrent.StatusStopped"),
+        TorrentStatusKind.Error => _language.GetString("Torrent.StatusErrorFormat", _statusError),
+        _ => string.Empty
+    };
+
+    private void SetStatus(TorrentStatusKind kind)
+    {
+        _statusKind = kind;
+        OnPropertyChanged(nameof(Status));
+        OnPropertyChanged(nameof(HasStatus));
+    }
+
+    private void SetActivePeerStatus(int activePeers, int completedPieces, int totalPieces)
+    {
+        _statusActivePeers = activePeers;
+        _statusCompletedPieces = completedPieces;
+        _statusTotalPieces = totalPieces;
+        SetStatus(TorrentStatusKind.ActivePeers);
+    }
+
+    private void SetErrorStatus(string message)
+    {
+        _statusError = message;
+        SetStatus(TorrentStatusKind.Error);
+    }
+
+    private string FormatSpeedText(double bytesPerSecond) =>
+        $"{_language.GetString("Torrent.SpeedPrefix")} {SizeFormatter.FormatSpeed(bytesPerSecond, _language)}";
+
+    private string FormatEtaText(TimeSpan? eta) =>
+        $"{_language.GetString("Torrent.EtaPrefix")} {SizeFormatter.FormatEta(eta, _language)}";
+
+    private string FormatIdleEtaText() => $"{_language.GetString("Torrent.EtaPrefix")} —";
+
+    private void RefreshEtaText()
+    {
+        if (_statusKind == TorrentStatusKind.Completed)
+            EtaText = FormatEtaText(TimeSpan.Zero);
+        else if (IsDownloading)
+            EtaText = FormatEtaText(_publishedEta);
+        else
+            EtaText = FormatIdleEtaText();
     }
 
     private void ResetMetrics(int initialCompletedPieces)
@@ -333,8 +413,8 @@ public sealed class TorrentQueueItem : INotifyPropertyChanged
             }
         }
 
-        SpeedText = $"Скорость: {SizeFormatter.FormatSpeed(_smoothedSpeed)}";
-        EtaText = $"Осталось: {SizeFormatter.FormatEta(_publishedEta)}";
+        SpeedText = FormatSpeedText(_smoothedSpeed);
+        EtaText = FormatEtaText(_publishedEta);
     }
 
     private void StartTimer()
@@ -349,7 +429,7 @@ public sealed class TorrentQueueItem : INotifyPropertyChanged
             UpdateMetrics(ProgressValue, ProgressMax);
 
             if (IsDownloading && _cts != null && !_cts.IsCancellationRequested)
-                Status = $"Активных пиров: {_download.ActivePeerCount} ({ProgressValue}/{ProgressMax})";
+                SetActivePeerStatus(_download.ActivePeerCount, ProgressValue, ProgressMax);
         };
         _timer.Start();
     }
